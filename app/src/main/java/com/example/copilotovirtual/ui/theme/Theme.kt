@@ -1,4 +1,4 @@
-package com.example.copilotvirtual.ui.theme
+package com.example.copilotovirtual.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme

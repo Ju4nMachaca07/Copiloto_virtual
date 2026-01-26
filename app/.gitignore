@@ -1,1 +1,20 @@
+<<<<<<< Updated upstream
 /build
+=======
+# ARCHIVOS DE MAPA (NO SUBIR A GITHUB)
+*.db
+*.sqlitedb
+*.sqlite
+*.mbtiles
+
+# Carpetas que pueden contener mapas
+app/src/main/assets/
+app/src/main/java/com/example/copilotovirtual/Assets/
+app/src/main/res/raw/
+
+# Pero permite archivos pequeños en assets
+!app/src/main/assets/*.txt
+!app/src/main/assets/*.json
+!app/src/main/assets/*.xml
+!app/src/main/assets/*.properties
+>>>>>>> Stashed changes

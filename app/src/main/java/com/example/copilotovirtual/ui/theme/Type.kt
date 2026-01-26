@@ -1,4 +1,4 @@
-package com.example.copilotvirtual.ui.theme
+package com.example.copilotovirtual.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
