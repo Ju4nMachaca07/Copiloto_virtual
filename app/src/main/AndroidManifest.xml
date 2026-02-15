@@ -2,18 +2,42 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- PERMISOS -->
+    <!-- ==================== PERMISOS ==================== -->
+
+    <!-- Internet y red -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+
+    <!-- Ubicación en primer plano (SIEMPRE NECESARIOS) -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="28" />
-    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+
+    <!-- Ubicación en segundo plano (SOLO SI ES NECESARIO) -->
+    <!-- Quita esto si no necesitas ubicación cuando la app está cerrada -->
+    <!-- Android 10+ (API 29+) requiere justificación para Google Play -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"
+        android:maxSdkVersion="29" />
+
+    <!-- Almacenamiento (solo para Android 9 y anteriores) -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28"
         tools:ignore="ScopedStorage" />
-    <uses-permission android:name="com.google.android.providers.gsf.permission.READ_GSERVICES" />
-<!--    <uses-feature android:name="android.hardware.location.gps" android:required="false" />-->
+
+    <!-- Audio para comandos de voz -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- Características del dispositivo -->
+    <uses-feature
+        android:name="android.hardware.location.gps"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.location.network"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.microphone"
+        android:required="false" />
 
     <application
         android:allowBackup="true"
@@ -23,48 +47,58 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar"
-        android:usesCleartextTraffic="true"
+        android:theme="@style/Theme.CopilotoVirtual"
+        android:usesCleartextTraffic="false"
         android:hardwareAccelerated="true"
-        android:requestLegacyExternalStorage="true"
-        tools:targetApi="31"
-        tools:ignore="GoogleAppIndexingWarning">
+        tools:targetApi="34">
 
-        <!-- PARA ANDROID 7-8 -->
+        <!-- Compatibilidad con Android 7-8 (API 24-26) -->
         <uses-library
             android:name="org.apache.http.legacy"
             android:required="false" />
 
-        <!-- API KEY GOOGLE MAPS -->
+        <!-- ==================== GOOGLE MAPS ==================== -->
+        <!-- IMPORTANTE: Mueve la API key a local.properties -->
         <meta-data
             android:name="com.google.android.geo.API_KEY"
             android:value="AIzaSyDOGsRxVnHG5oWJGZMbsabAWreCA3Pebqg" />
 
-        <!-- VERSIÓN GOOGLE PLAY SERVICES -->
         <meta-data
             android:name="com.google.android.gms.version"
             android:value="@integer/google_play_services_version" />
 
-        <!-- CONFIGURACIÓN OSMDROID -->
+        <!-- ==================== OSMDROID (alternativa offline) ==================== -->
+        <!-- Solo si usas OSMDroid, sino quita esto -->
         <meta-data
             android:name="osmdroid.basePath"
-            android:value="/storage/emulated/0/osmdroid" />
+            android:value="/storage/emulated/0/Android/data/com.example.copilotovirtual/files" />
         <meta-data
             android:name="osmdroid.osmTileCache"
-            android:value="/storage/emulated/0/osmdroid/tiles" />
+            android:value="/storage/emulated/0/Android/data/com.example.copilotovirtual/files/tiles" />
 
-        <!-- MAIN ACTIVITY -->
+        <!-- ==================== MAIN ACTIVITY ==================== -->
         <activity
             android:name="com.example.copilotovirtual.MainActivity"
             android:exported="true"
-            android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar"
             android:windowSoftInputMode="adjustResize"
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden">
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
+            android:screenOrientation="unspecified">
+
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- ==================== SERVICIO DE NAVEGACIÓN (OPCIONAL) ==================== -->
+        <!-- Si quieres navegación en segundo plano -->
+        <!--
+        <service
+            android:name=".services.NavigationService"
+            android:foregroundServiceType="location"
+            android:enabled="true"
+            android:exported="false" />
+        -->
 
     </application>
 

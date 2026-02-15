@@ -7,15 +7,19 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
-import com.example.copilotovirtual.ui.theme.Theme
-import com.example.copilotovirtual.ui.theme.AppNavigation
+import com.example.copilotovirtual.navigation.AppNavigation
+import com.example.copilotovirtual.ui.theme.CopilotoVirtualTheme
+import com.google.android.gms.maps.MapsInitializer
+import com.google.android.gms.maps.OnMapsSdkInitializedCallback
 
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(), OnMapsSdkInitializedCallback {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        MapsInitializer.initialize(applicationContext, MapsInitializer.Renderer.LATEST, this)
+
         setContent {
-            Theme {
+            CopilotoVirtualTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
@@ -23,6 +27,13 @@ class MainActivity : ComponentActivity() {
                     AppNavigation()
                 }
             }
+        }
+    }
+
+    override fun onMapsSdkInitialized(renderer: MapsInitializer.Renderer) {
+        when (renderer) {
+            MapsInitializer.Renderer.LATEST -> println("Maps: Renderizador más reciente")
+            MapsInitializer.Renderer.LEGACY -> println("Maps: Renderizador legacy")
         }
     }
 }
