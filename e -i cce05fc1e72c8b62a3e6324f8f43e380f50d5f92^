@@ -1,0 +1,18 @@
+[33mcommit 63cdd8589b7da59e9b801cd60fc4f9be79e1386d[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m
+Author: Juan Machaca Espinoza <juan.machaca@tecsup.edu.pe>
+Date:   Fri Jan 23 16:45:13 2026 -0500
+
+    fix: move and rename map file, exclude from git
+
+[33mcommit cce05fc1e72c8b62a3e6324f8f43e380f50d5f92[m
+Author: Juan Machaca Espinoza <juan.machaca@tecsup.edu.pe>
+Date:   Thu Jan 22 20:16:00 2026 -0500
+
+    🚀 Versión 1.0 - App GPS funcional
+    
+    - Mapa OpenStreetMap integrado
+    - Permisos de ubicación funcionando
+    - Interfaz con Jetpack Compose
+    - Configuración para mapas offline
+    - Compatibilidad Kotlin 1.9.20 + Compose 1.5.4
+    - App compila y ejecuta correctamente
