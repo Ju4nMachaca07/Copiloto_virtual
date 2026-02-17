@@ -23,9 +23,19 @@ runtime = "1.0.0-alpha10"
 remote-creation-compose = "1.0.0-alpha03"
 transport-runtime = "4.0.0"
 firebase-auth-ktx = "24.0.1"
+databinding-adapters = "9.0.1"
+core-animation = "1.0.0"
+room = "2.6.1"
+room-common-jvm = "2.8.4"
+room-runtime-android = "2.8.4"
 
 
 [libraries]
+
+androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
+androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
+
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "core-ktx" }
 gms-play-services-location = { module = "com.google.android.gms:play-services-location" }
 lifecycle-runtime-ktx = { module = "androidx.lifecycle:lifecycle-runtime-ktx", version.ref = "lifecycle-runtime-ktx" }
@@ -52,6 +62,10 @@ androidx-runtime = { group = "androidx.xr.runtime", name = "runtime", version.re
 androidx-remote-creation-compose = { group = "androidx.compose.remote", name = "remote-creation-compose", version.ref = "remote-creation-compose" }
 transport-runtime = { group = "com.google.android.datatransport", name = "transport-runtime", version.ref = "transport-runtime" }
 firebase-auth-ktx = { group = "com.google.firebase", name = "firebase-auth-ktx", version.ref = "firebase-auth-ktx" }
+androidx-databinding-adapters = { group = "androidx.databinding", name = "databinding-adapters", version.ref = "databinding-adapters" }
+androidx-core-animation = { group = "androidx.core", name = "core-animation", version.ref = "core-animation" }
+androidx-room-common-jvm = { group = "androidx.room", name = "room-common-jvm", version.ref = "room-common-jvm" }
+androidx-room-runtime-android = { group = "androidx.room", name = "room-runtime-android", version.ref = "room-runtime-android" }
 [bundles]
 compose = ["compose-ui", "compose-ui-graphics", "compose-ui-tooling-preview", "compose-material3"]
 

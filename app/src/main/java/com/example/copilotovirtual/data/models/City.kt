@@ -1,3 +1,4 @@
+// data/models/City.kt
 package com.example.copilotovirtual.data.models
 
 import com.google.android.gms.maps.model.LatLng
@@ -12,18 +13,11 @@ data class City(
     companion object {
         val cities = listOf(
             City(
-                id = "marcona",
-                name = "Marcona",
-                coordinates = LatLng(-15.3500, -75.1100),
-                description = "Principal zona de extracción de hierro",
-                isMiningArea = true
-            ),
-            City(
-                id = "mina_justa",
-                name = "Mina Justa",
-                coordinates = LatLng(-15.4000, -75.2000),
-                description = "Operación de cobre",
-                isMiningArea = true
+                id = "arequipa",
+                name = "Arequipa",
+                coordinates = LatLng(-16.4090, -71.5375),
+                description = "Ciudad principal del sur",
+                isMiningArea = false
             ),
             City(
                 id = "nazca",
@@ -33,19 +27,22 @@ data class City(
                 isMiningArea = false
             ),
             City(
-                id = "arequipa",
-                name = "Arequipa",
-                coordinates = LatLng(-16.4090, -71.5375),
-                description = "Ciudad principal del sur",
-                isMiningArea = false
+                id = "marcona",
+                name = "Marcona",
+                coordinates = LatLng(-15.3500, -75.1100),
+                description = "Zona de extracción de hierro",
+                isMiningArea = true
+            ),
+            City(
+                id = "garita_mina_justa",
+                name = "Garita Mina Justa",
+                coordinates = LatLng(-15.3947, -75.1789),
+                description = "Control de ingreso Mina Justa",
+                isMiningArea = true
             )
         )
 
-        fun getCityById(id: String): City? = cities.find { it.id == id }
-
-        fun getMiningCities(): List<City> = cities.filter { it.isMiningArea }
-
-        fun getCityCoordinates(cityId: String): LatLng? =
-            cities.find { it.id == cityId }?.coordinates
+        fun getCityById(id: String) = cities.find { it.id == id }
+        fun getMiningCities() = cities.filter { it.isMiningArea }
     }
 }

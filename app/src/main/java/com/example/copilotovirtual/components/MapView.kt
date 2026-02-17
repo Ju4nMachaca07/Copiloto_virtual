@@ -1,6 +1,9 @@
+// components/MapView.kt
 package com.example.copilotovirtual.components
 
 import android.Manifest
+import android.content.Context
+import android.graphics.Paint
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -13,46 +16,43 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.viewinterop.AndroidView
+import com.example.copilotovirtual.utils.NetworkUtils
 import com.example.copilotovirtual.viewmodels.LocationPermissionState
 import com.example.copilotovirtual.viewmodels.NavigationViewModel
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.*
 import com.google.maps.android.compose.*
+import org.osmdroid.config.Configuration
+import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.MapView as OsmMapView
+import org.osmdroid.views.overlay.Polyline as OsmPolyline
+import org.osmdroid.views.overlay.Marker as OsmMarker
 
 @Composable
 fun MapView(
     modifier: Modifier = Modifier,
-    viewModel: NavigationViewModel = viewModel()
+    viewModel: NavigationViewModel
 ) {
     val context = LocalContext.current
+    val hasInternet = remember { mutableStateOf(NetworkUtils.isConnected(context)) }
 
     val currentLocation by viewModel.currentLocation.collectAsState()
     val routePoints by viewModel.routePoints.collectAsState()
-    val mapMarkers by viewModel.mapMarkers.collectAsState()
-    val isLoadingLocation by viewModel.isLoadingLocation.collectAsState()
     val permissionState by viewModel.permissionState.collectAsState()
+    val isLoadingLocation by viewModel.isLoadingLocation.collectAsState()
     val shouldCenter by viewModel.shouldCenterOnLocation.collectAsState()
 
-    val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(
-            LatLng(-15.3500, -75.1100),
-            8f
-        )
-    }
-
-    // Launcher de permisos
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        val granted = permissions.values.any { it }
-        if (granted) {
+        if (permissions.values.any { it }) {
             viewModel.startLocationUpdates(context)
             viewModel.getLastKnownLocation(context)
         }
     }
 
-    // Inicialización
     LaunchedEffect(Unit) {
         viewModel.initializeLocationClient(context)
         if (viewModel.checkLocationPermission(context)) {
@@ -64,33 +64,6 @@ fun MapView(
                     Manifest.permission.ACCESS_FINE_LOCATION,
                     Manifest.permission.ACCESS_COARSE_LOCATION
                 )
-            )
-        }
-    }
-
-    // Centrar en ubicación
-    LaunchedEffect(shouldCenter, currentLocation) {
-        if (shouldCenter && currentLocation != null) {
-            cameraPositionState.animate(
-                CameraUpdateFactory.newLatLngZoom(
-                    LatLng(currentLocation!!.latitude, currentLocation!!.longitude),
-                    15f
-                ),
-                durationMs = 1000
-            )
-            viewModel.onLocationCentered()
-        }
-    }
-
-    // Centrar en primera ubicación
-    LaunchedEffect(currentLocation) {
-        if (currentLocation != null && cameraPositionState.position.zoom < 10f) {
-            cameraPositionState.animate(
-                CameraUpdateFactory.newLatLngZoom(
-                    LatLng(currentLocation!!.latitude, currentLocation!!.longitude),
-                    12f
-                ),
-                durationMs = 1500
             )
         }
     }
@@ -110,82 +83,54 @@ fun MapView(
                 )
             }
             else -> {
-                GoogleMap(
-                    modifier = Modifier.fillMaxSize(),
-                    cameraPositionState = cameraPositionState,
-                    properties = MapProperties(
-                        isMyLocationEnabled = false,
-                        mapType = MapType.NORMAL
-                    ),
-                    uiSettings = MapUiSettings(
-                        zoomControlsEnabled = false,
-                        myLocationButtonEnabled = false,
-                        compassEnabled = true
+                if (hasInternet.value) {
+                    // MAPA ONLINE - Google Maps
+                    OnlineMapView(
+                        currentLocation = currentLocation,
+                        routePoints = routePoints,
+                        shouldCenter = shouldCenter,
+                        onCentered = { viewModel.onLocationCentered() }
                     )
-                ) {
-                    // Ubicación actual
-                    currentLocation?.let { location ->
-                        val userPosition = LatLng(location.latitude, location.longitude)
+                } else {
+                    // MAPA OFFLINE - OSMDroid
+                    OfflineMapView(
+                        context = context,
+                        currentLocation = currentLocation,
+                        routePoints = routePoints,
+                        shouldCenter = shouldCenter
+                    )
+                }
 
-                        Circle(
-                            center = userPosition,
-                            radius = location.accuracy.toDouble(),
-                            fillColor = Color(0x220000FF),
-                            strokeColor = Color(0xFF0000FF),
-                            strokeWidth = 2f
-                        )
-
-                        Marker(
-                            state = MarkerState(position = userPosition),
-                            title = "Tu ubicación",
-                            snippet = "Precisión: ${location.accuracy.toInt()}m",
-                            icon = BitmapDescriptorFactory.defaultMarker(
-                                BitmapDescriptorFactory.HUE_AZURE
-                            ),
-                            zIndex = 10f
-                        )
-                    }
-
-                    // Ruta activa
-                    if (routePoints.isNotEmpty() && routePoints.size >= 2) {
-                        Polyline(
-                            points = routePoints,
-                            color = Color(0xFF2196F3),
-                            width = 12f,
-                            geodesic = true,
-                            zIndex = 5f
-                        )
-
-                        Marker(
-                            state = MarkerState(position = routePoints.first()),
-                            title = "Inicio",
-                            icon = BitmapDescriptorFactory.defaultMarker(
-                                BitmapDescriptorFactory.HUE_GREEN
-                            ),
-                            zIndex = 6f
-                        )
-
-                        Marker(
-                            state = MarkerState(position = routePoints.last()),
-                            title = "Destino",
-                            icon = BitmapDescriptorFactory.defaultMarker(
-                                BitmapDescriptorFactory.HUE_RED
-                            ),
-                            zIndex = 6f
-                        )
-                    }
-
-                    // Otros marcadores
-                    mapMarkers.forEach { marker ->
-                        Marker(
-                            state = MarkerState(position = marker.position),
-                            title = marker.title,
-                            snippet = marker.snippet
-                        )
+                // Banner sin internet
+                if (!hasInternet.value) {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(8.dp),
+                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        shape = MaterialTheme.shapes.medium
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.WifiOff,
+                                null,
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.tertiary
+                            )
+                            Text(
+                                "GPS activo · Sin internet",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.tertiary
+                            )
+                        }
                     }
                 }
 
-                // Indicador de carga
+                // Loading GPS
                 if (isLoadingLocation) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
@@ -202,7 +147,7 @@ fun MapView(
                             ) {
                                 CircularProgressIndicator()
                                 Spacer(modifier = Modifier.height(16.dp))
-                                Text("Obteniendo ubicación GPS...")
+                                Text("Buscando señal GPS...")
                             }
                         }
                     }
@@ -212,46 +157,198 @@ fun MapView(
     }
 }
 
+// MAPA ONLINE CON GOOGLE MAPS
+@Composable
+fun OnlineMapView(
+    currentLocation: android.location.Location?,
+    routePoints: List<com.google.android.gms.maps.model.LatLng>,
+    shouldCenter: Boolean,
+    onCentered: () -> Unit
+) {
+    val cameraPositionState = rememberCameraPositionState {
+        position = CameraPosition.fromLatLngZoom(
+            LatLng(-15.3500, -75.1100), 8f
+        )
+    }
+
+    LaunchedEffect(shouldCenter, currentLocation) {
+        if (shouldCenter && currentLocation != null) {
+            cameraPositionState.animate(
+                CameraUpdateFactory.newLatLngZoom(
+                    LatLng(currentLocation.latitude, currentLocation.longitude), 15f
+                ), 1000
+            )
+            onCentered()
+        }
+    }
+
+    LaunchedEffect(currentLocation) {
+        if (currentLocation != null && cameraPositionState.position.zoom < 10f) {
+            cameraPositionState.animate(
+                CameraUpdateFactory.newLatLngZoom(
+                    LatLng(currentLocation.latitude, currentLocation.longitude), 12f
+                ), 1500
+            )
+        }
+    }
+
+    GoogleMap(
+        modifier = Modifier.fillMaxSize(),
+        cameraPositionState = cameraPositionState,
+        properties = MapProperties(mapType = MapType.NORMAL),
+        uiSettings = MapUiSettings(
+            zoomControlsEnabled = false,
+            myLocationButtonEnabled = false,
+            compassEnabled = true
+        )
+    ) {
+        currentLocation?.let { location ->
+            val userPos = LatLng(location.latitude, location.longitude)
+            Circle(
+                center = userPos,
+                radius = location.accuracy.toDouble(),
+                fillColor = Color(0x220000FF),
+                strokeColor = Color(0xFF0000FF),
+                strokeWidth = 2f
+            )
+            Marker(
+                state = MarkerState(position = userPos),
+                title = "Tu ubicación",
+                icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE)
+            )
+        }
+
+        if (routePoints.size >= 2) {
+            Polyline(
+                points = routePoints,
+                color = Color(0xFF2196F3),
+                width = 12f,
+                geodesic = true
+            )
+            Marker(
+                state = MarkerState(position = routePoints.first()),
+                title = "Inicio",
+                icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN)
+            )
+            Marker(
+                state = MarkerState(position = routePoints.last()),
+                title = "Destino",
+                icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)
+            )
+        }
+    }
+}
+
+// MAPA OFFLINE CON OSMDROID
+@Composable
+fun OfflineMapView(
+    context: Context,
+    currentLocation: android.location.Location?,
+    routePoints: List<com.google.android.gms.maps.model.LatLng>,
+    shouldCenter: Boolean
+) {
+    // Configurar OSMDroid
+    LaunchedEffect(Unit) {
+        Configuration.getInstance().apply {
+            userAgentValue = context.packageName
+            osmdroidBasePath = context.getExternalFilesDir(null)
+            osmdroidTileCache = context.getExternalFilesDir("tiles")
+        }
+    }
+
+    AndroidView(
+        factory = { ctx ->
+            OsmMapView(ctx).apply {
+                setTileSource(TileSourceFactory.MAPNIK)
+                setMultiTouchControls(true)
+                controller.setZoom(12.0)
+
+                // Centro inicial en Marcona
+                controller.setCenter(GeoPoint(-15.3500, -75.1100))
+            }
+        },
+        update = { mapView ->
+            mapView.overlays.clear()
+
+            // Ubicación actual
+            currentLocation?.let { location ->
+                val marker = OsmMarker(mapView).apply {
+                    position = GeoPoint(location.latitude, location.longitude)
+                    title = "Tu ubicación"
+                    setAnchor(OsmMarker.ANCHOR_CENTER, OsmMarker.ANCHOR_BOTTOM)
+                }
+                mapView.overlays.add(marker)
+
+                if (shouldCenter) {
+                    mapView.controller.animateTo(
+                        GeoPoint(location.latitude, location.longitude)
+                    )
+                    mapView.controller.setZoom(15.0)
+                }
+            }
+
+            // Ruta
+            if (routePoints.size >= 2) {
+                val polyline = OsmPolyline().apply {
+                    setPoints(routePoints.map { GeoPoint(it.latitude, it.longitude) })
+                    outlinePaint.color = android.graphics.Color.BLUE
+                    outlinePaint.strokeWidth = 12f
+                    outlinePaint.style = Paint.Style.STROKE
+                }
+                mapView.overlays.add(polyline)
+
+                // Marcador inicio
+                val startMarker = OsmMarker(mapView).apply {
+                    position = GeoPoint(
+                        routePoints.first().latitude,
+                        routePoints.first().longitude
+                    )
+                    title = "Inicio"
+                }
+                mapView.overlays.add(startMarker)
+
+                // Marcador fin
+                val endMarker = OsmMarker(mapView).apply {
+                    position = GeoPoint(
+                        routePoints.last().latitude,
+                        routePoints.last().longitude
+                    )
+                    title = "Destino"
+                }
+                mapView.overlays.add(endMarker)
+            }
+
+            mapView.invalidate()
+        }
+    )
+}
+
 @Composable
 fun PermissionDeniedScreen(onRequestPermission: () -> Unit) {
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
+        modifier = Modifier.fillMaxSize().padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         Icon(
-            Icons.Default.LocationOff,
-            contentDescription = null,
+            Icons.Default.LocationOff, null,
             modifier = Modifier.size(80.dp),
             tint = MaterialTheme.colorScheme.error
         )
-
         Spacer(modifier = Modifier.height(24.dp))
-
-        Text(
-            "Permisos de ubicación requeridos",
-            style = MaterialTheme.typography.headlineSmall
-        )
-
+        Text("Permisos de ubicación requeridos",
+            style = MaterialTheme.typography.headlineSmall)
         Spacer(modifier = Modifier.height(16.dp))
-
         Text(
-            "Esta app necesita acceso a tu ubicación para mostrar rutas de navegación",
+            "Esta app necesita GPS para la navegación",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-
         Spacer(modifier = Modifier.height(32.dp))
-
-        Button(
-            onClick = onRequestPermission,
-            modifier = Modifier.fillMaxWidth()
-        ) {
+        Button(onClick = onRequestPermission, modifier = Modifier.fillMaxWidth()) {
             Icon(Icons.Default.LocationOn, null)
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Conceder Permisos")
+            Text("Conceder Permisos GPS")
         }
     }
 }

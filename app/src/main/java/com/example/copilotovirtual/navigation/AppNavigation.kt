@@ -82,6 +82,10 @@ fun AppNavigation() {
                 onBack = { navController.popBackStack() }
             )
         }
+
+        composable("downloadRoutes") {
+            DownloadRoutesScreen(onBack = { navController.popBackStack() })
+        }
     }
 }
 

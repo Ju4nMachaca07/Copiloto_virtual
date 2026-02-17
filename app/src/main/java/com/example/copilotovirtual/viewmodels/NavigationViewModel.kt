@@ -1,3 +1,4 @@
+// viewmodels/NavigationViewModel.kt
 package com.example.copilotovirtual.viewmodels
 
 import android.Manifest
@@ -14,7 +15,6 @@ import com.example.copilotovirtual.utils.GeofenceManager
 import com.example.copilotovirtual.utils.RouteSegment
 import com.example.copilotovirtual.utils.TextToSpeechHelper
 import com.google.android.gms.location.*
-import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.maps.model.LatLng
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -67,6 +67,16 @@ class NavigationViewModel : ViewModel() {
     private val _mapMarkers = MutableStateFlow<List<MapMarkerData>>(emptyList())
     val mapMarkers: StateFlow<List<MapMarkerData>> = _mapMarkers.asStateFlow()
 
+    // Speed monitoring
+    private val _currentSpeed = MutableStateFlow(0)
+    val currentSpeed: StateFlow<Int> = _currentSpeed.asStateFlow()
+
+    private val _speedLimit = MutableStateFlow<Int?>(null)
+    val speedLimit: StateFlow<Int?> = _speedLimit.asStateFlow()
+
+    private var lastSpeedWarning = 0L
+    private val SPEED_WARNING_COOLDOWN = 30000L // 30 segundos
+
     // Managers
     private var fusedLocationClient: FusedLocationProviderClient? = null
     private var locationCallback: LocationCallback? = null
@@ -111,9 +121,9 @@ class NavigationViewModel : ViewModel() {
 
         val locationRequest = LocationRequest.Builder(
             Priority.PRIORITY_HIGH_ACCURACY,
-            5000L
+            2000L // Actualización cada 2 segundos
         ).apply {
-            setMinUpdateIntervalMillis(2000L)
+            setMinUpdateIntervalMillis(1000L)
             setWaitForAccurateLocation(true)
         }.build()
 
@@ -122,6 +132,9 @@ class NavigationViewModel : ViewModel() {
                 result.lastLocation?.let { location ->
                     _currentLocation.value = location
                     _isLoadingLocation.value = false
+
+                    // Actualizar velocidad
+                    updateSpeed(location)
 
                     if (_isNavigating.value) {
                         checkNavigationProgress(location)
@@ -161,7 +174,7 @@ class NavigationViewModel : ViewModel() {
                 }
             }
         } catch (e: SecurityException) {
-            Log.e("NavViewModel", "Error obteniendo ubicacion: ${e.message}")
+            Log.e("NavViewModel", "Error obteniendo ubicación: ${e.message}")
         }
     }
 
@@ -173,9 +186,31 @@ class NavigationViewModel : ViewModel() {
         _shouldCenterOnLocation.value = false
     }
 
-    /**
-     * INICIAR NAVEGACIÓN - CORREGIDO PARA USAR WAYPOINTS DETALLADOS
-     */
+    private fun updateSpeed(location: Location) {
+        // Convertir m/s a km/h
+        val speedKmh = (location.speed * 3.6).toInt()
+        _currentSpeed.value = speedKmh.coerceAtLeast(0)
+
+        // Verificar exceso de velocidad
+        _speedLimit.value?.let { limit ->
+            if (speedKmh > limit + 5) { // 5 km/h de tolerancia
+                val now = System.currentTimeMillis()
+                if (now - lastSpeedWarning > SPEED_WARNING_COOLDOWN) {
+                    announceSpeedWarning(speedKmh, limit)
+                    lastSpeedWarning = now
+                }
+            }
+        }
+    }
+
+    private fun announceSpeedWarning(currentSpeed: Int, limit: Int) {
+        val warning = "Atención. Velocidad excedida. " +
+                "Límite: $limit kilómetros por hora. " +
+                "Tu velocidad: $currentSpeed kilómetros por hora. " +
+                "Por favor, reduce la velocidad."
+        announceInstruction(warning)
+    }
+
     fun startNavigation(routeId: String) {
         val route = Route.getRouteById(routeId)
         if (route == null) {
@@ -183,12 +218,10 @@ class NavigationViewModel : ViewModel() {
             return
         }
 
-        Log.d("NavViewModel", "Iniciando navegacion: ${route.name}")
+        Log.d("NavViewModel", "Iniciando navegación: ${route.name}")
         Log.d("NavViewModel", "Waypoints en ruta: ${route.waypoints.size}")
 
         _isNavigating.value = true
-
-        // USAR LOS WAYPOINTS DETALLADOS DE LA RUTA
         _routePoints.value = route.waypoints
 
         // Generar segmentos con geocercas
@@ -197,24 +230,32 @@ class NavigationViewModel : ViewModel() {
 
         Log.d("NavViewModel", "Segmentos generados: ${segments.size}")
 
+        // Establecer límite de velocidad inicial
+        if (segments.isNotEmpty()) {
+            _speedLimit.value = segments.first().speedLimit
+        }
+
         geofenceManager.reset()
 
-        val instruction = "Iniciando navegacion hacia ${route.name}"
+        val instruction = "Iniciando navegación hacia ${route.name}. " +
+                "Distancia total: ${(route.distance / 1000).toInt()} kilómetros."
         _lastInstruction.value = instruction
         announceInstruction(instruction)
     }
 
     fun stopNavigation() {
-        Log.d("NavViewModel", "Deteniendo navegacion")
+        Log.d("NavViewModel", "Deteniendo navegación")
 
         _isNavigating.value = false
         _routePoints.value = emptyList()
         _currentSegments.value = emptyList()
         _navigationProgress.value = 0f
         _lastInstruction.value = null
+        _speedLimit.value = null
+        _currentSpeed.value = 0
 
         geofenceManager.reset()
-        announceInstruction("Navegacion detenida")
+        announceInstruction("Navegación detenida")
     }
 
     fun checkNavigationProgress(location: Location) {
@@ -224,9 +265,10 @@ class NavigationViewModel : ViewModel() {
             currentLocation = location,
             segments = _currentSegments.value,
             onEnterSegment = { segment, instruction ->
-                Log.d("NavViewModel", "Geocerca alcanzada: $instruction")
+                Log.d("NavViewModel", "Geocerca: $instruction")
                 _lastInstruction.value = instruction
                 _navigationProgress.value = geofenceManager.getProgress(_currentSegments.value.size)
+                _speedLimit.value = segment.speedLimit
                 announceInstruction(instruction)
             }
         )

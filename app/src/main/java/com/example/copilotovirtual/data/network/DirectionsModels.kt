@@ -1,51 +1,57 @@
+// data/network/DirectionsModels.kt
 package com.example.copilotovirtual.data.network
 
 import com.google.gson.annotations.SerializedName
 
+// Modelos para la respuesta de Google Directions API
 data class DirectionsResponse(
-    val routes: List<DirectionsRoute>,
-    val status: String
+    @SerializedName("routes") val routes: List<DirectionRoute>,
+    @SerializedName("status") val status: String
 )
 
-data class DirectionsRoute(
-    val legs: List<RouteLeg>,
-    @SerializedName("overview_polyline")
-    val overviewPolyline: PolylineData
+data class DirectionRoute(
+    @SerializedName("summary") val summary: String,
+    @SerializedName("legs") val legs: List<RouteLeg>,
+    @SerializedName("overview_polyline") val overviewPolyline: Polyline,
+    @SerializedName("warnings") val warnings: List<String> = emptyList(),
+    @SerializedName("waypoint_order") val waypointOrder: List<Int> = emptyList()
 )
 
 data class RouteLeg(
-    val distance: Distance,
-    val duration: Duration,
-    val steps: List<RouteStep>
+    @SerializedName("distance") val distance: Distance,
+    @SerializedName("duration") val duration: Duration,
+    @SerializedName("start_address") val startAddress: String,
+    @SerializedName("end_address") val endAddress: String,
+    @SerializedName("start_location") val startLocation: Location,
+    @SerializedName("end_location") val endLocation: Location,
+    @SerializedName("steps") val steps: List<RouteStep>
 )
 
 data class RouteStep(
-    val distance: Distance,
-    val duration: Duration,
-    @SerializedName("start_location")
-    val startLocation: LocationPoint,
-    @SerializedName("end_location")
-    val endLocation: LocationPoint,
-    @SerializedName("html_instructions")
-    val htmlInstructions: String,
-    val polyline: PolylineData
+    @SerializedName("distance") val distance: Distance,
+    @SerializedName("duration") val duration: Duration,
+    @SerializedName("start_location") val startLocation: Location,
+    @SerializedName("end_location") val endLocation: Location,
+    @SerializedName("html_instructions") val htmlInstructions: String,
+    @SerializedName("maneuver") val maneuver: String? = null,
+    @SerializedName("polyline") val polyline: Polyline
 )
 
 data class Distance(
-    val text: String,
-    val value: Int // en metros
+    @SerializedName("text") val text: String,
+    @SerializedName("value") val value: Int // en metros
 )
 
 data class Duration(
-    val text: String,
-    val value: Int // en segundos
+    @SerializedName("text") val text: String,
+    @SerializedName("value") val value: Int // en segundos
 )
 
-data class LocationPoint(
-    val lat: Double,
-    val lng: Double
+data class Location(
+    @SerializedName("lat") val lat: Double,
+    @SerializedName("lng") val lng: Double
 )
 
-data class PolylineData(
-    val points: String
+data class Polyline(
+    @SerializedName("points") val points: String
 )

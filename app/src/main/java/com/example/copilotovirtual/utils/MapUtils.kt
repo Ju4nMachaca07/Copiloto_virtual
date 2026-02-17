@@ -131,12 +131,6 @@ object MapUtils {
         return LatLng(Math.toDegrees(lat3), Math.toDegrees(lon3))
     }
 
-    /**
-     * Estimar tiempo de viaje
-     * @param distanceMeters distancia en metros
-     * @param avgSpeedKmh velocidad promedio en km/h
-     * @return tiempo en horas
-     */
     fun estimateTravelTime(
         distanceMeters: Double,
         avgSpeedKmh: Double = 60.0

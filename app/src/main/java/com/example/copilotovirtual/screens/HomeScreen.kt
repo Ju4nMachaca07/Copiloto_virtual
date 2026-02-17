@@ -154,15 +154,13 @@ fun HomeScreen(
 
                 // Ver mapa
                 OutlinedButton(
-                    onClick = { navController.navigate("map") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(60.dp),
+                    onClick = { navController.navigate("downloadRoutes") },
+                    modifier = Modifier.fillMaxWidth().height(60.dp),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Icon(Icons.Default.Map, null)
+                    Icon(Icons.Default.Download, null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Ver Mapa")
+                    Text("Descargar Rutas Offline")
                 }
 
                 // Panel admin (solo propietario)
