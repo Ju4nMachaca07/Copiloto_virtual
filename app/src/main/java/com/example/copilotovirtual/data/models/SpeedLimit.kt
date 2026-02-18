@@ -1,4 +1,4 @@
-package com.example.copilotovirtual.models
+package com.example.copilotovirtual.data.models
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey

@@ -1,6 +1,7 @@
 // data/models/Route.kt
 package com.example.copilotovirtual.data.models
 
+import android.util.Log
 import com.google.android.gms.maps.model.LatLng
 
 data class Route(
@@ -16,9 +17,7 @@ data class Route(
     val highways: Boolean = true
 ) {
     companion object {
-
-        // Estas rutas son de RESPALDO por si no hay internet NI rutas descargadas
-        // Las rutas REALES vienen de Google Directions API y se guardan en Room
+        // Fallback routes solo para cuando no hay internet ni descarga
         val fallbackRoutes = listOf(
 
             // ==========================================
@@ -202,8 +201,15 @@ data class Route(
             )
         )
 
-        fun getRouteById(id: String): Route? =
-            fallbackRoutes.find { it.id == id }
+        fun getRouteById(id: String): Route? {
+            val route = fallbackRoutes.find { it.id == id }
+            if (route != null) {
+                Log.d("Route", "Ruta encontrada: ${route.name}")
+            } else {
+                Log.e("Route", "Ruta NO encontrada: $id")
+            }
+            return route
+        }
 
         fun getFallbackRoutes(
             originCityId: String,
@@ -211,10 +217,6 @@ data class Route(
         ): List<Route> = fallbackRoutes.filter {
             it.startCityId == originCityId &&
                     it.endCityId == destCityId
-        }
-
-        fun getRoutesBetween(originId: String, destId: String): List<Route> {
-            return emptyList()
         }
     }
 }

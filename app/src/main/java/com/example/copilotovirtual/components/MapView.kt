@@ -4,6 +4,7 @@ package com.example.copilotovirtual.components
 import android.Manifest
 import android.content.Context
 import android.graphics.Paint
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -15,6 +16,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.copilotovirtual.utils.NetworkUtils
@@ -36,20 +39,18 @@ fun MapView(
     viewModel: NavigationViewModel
 ) {
     val context = LocalContext.current
-    val hasInternet = remember { mutableStateOf(NetworkUtils.isConnected(context)) }
 
     val currentLocation by viewModel.currentLocation.collectAsState()
     val routePoints by viewModel.routePoints.collectAsState()
     val permissionState by viewModel.permissionState.collectAsState()
-    val isLoadingLocation by viewModel.isLoadingLocation.collectAsState()
     val shouldCenter by viewModel.shouldCenterOnLocation.collectAsState()
+    val gpsStatus by viewModel.gpsStatus.collectAsState()
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         if (permissions.values.any { it }) {
             viewModel.startLocationUpdates(context)
-            viewModel.getLastKnownLocation(context)
         }
     }
 
@@ -57,7 +58,6 @@ fun MapView(
         viewModel.initializeLocationClient(context)
         if (viewModel.checkLocationPermission(context)) {
             viewModel.startLocationUpdates(context)
-            viewModel.getLastKnownLocation(context)
         } else {
             permissionLauncher.launch(
                 arrayOf(
@@ -83,72 +83,169 @@ fun MapView(
                 )
             }
             else -> {
-                if (hasInternet.value) {
-                    // MAPA ONLINE - Google Maps
-                    OnlineMapView(
-                        currentLocation = currentLocation,
-                        routePoints = routePoints,
-                        shouldCenter = shouldCenter,
-                        onCentered = { viewModel.onLocationCentered() }
+                // Mapa
+                GoogleMap(
+                    modifier = Modifier.fillMaxSize(),
+                    cameraPositionState = rememberCameraPositionState {
+                        position = CameraPosition.fromLatLngZoom(
+                            currentLocation?.let {
+                                LatLng(it.latitude, it.longitude)
+                            } ?: LatLng(-15.3500, -75.1100),
+                            if (currentLocation != null) 15f else 8f
+                        )
+                    },
+                    properties = MapProperties(
+                        isMyLocationEnabled = false,
+                        mapType = MapType.NORMAL
+                    ),
+                    uiSettings = MapUiSettings(
+                        zoomControlsEnabled = false,
+                        myLocationButtonEnabled = false,
+                        compassEnabled = true
                     )
-                } else {
-                    // MAPA OFFLINE - OSMDroid
-                    OfflineMapView(
-                        context = context,
-                        currentLocation = currentLocation,
-                        routePoints = routePoints,
-                        shouldCenter = shouldCenter
-                    )
-                }
+                ) {
+                    // Ubicación actual del usuario
+                    currentLocation?.let { location ->
+                        val userPos = LatLng(location.latitude, location.longitude)
 
-                // Banner sin internet
-                if (!hasInternet.value) {
-                    Surface(
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .padding(8.dp),
-                        color = MaterialTheme.colorScheme.tertiaryContainer,
-                        shape = MaterialTheme.shapes.medium
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.WifiOff,
-                                null,
-                                modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.tertiary
-                            )
-                            Text(
-                                "GPS activo · Sin internet",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.tertiary
-                            )
-                        }
+                        // Círculo de precisión
+                        Circle(
+                            center = userPos,
+                            radius = location.accuracy.toDouble(),
+                            fillColor = Color(0x220000FF),
+                            strokeColor = Color(0xFF0000FF),
+                            strokeWidth = 2f
+                        )
+
+                        // Marcador de ubicación
+                        Marker(
+                            state = MarkerState(position = userPos),
+                            title = "Tu ubicación",
+                            snippet = "Precisión: ${location.accuracy.toInt()}m",
+                            icon = BitmapDescriptorFactory.defaultMarker(
+                                BitmapDescriptorFactory.HUE_AZURE
+                            ),
+                            zIndex = 10f
+                        )
+                    }
+
+                    // FIX: Dibujar la ruta si existe
+                    if (routePoints.isNotEmpty() && routePoints.size >= 2) {
+                        Log.d("MapView", "Dibujando ruta con ${routePoints.size} puntos")
+
+                        Polyline(
+                            points = routePoints,
+                            color = Color(0xFF2196F3),
+                            width = 12f,
+                            geodesic = true,
+                            zIndex = 5f
+                        )
+
+                        // Marcador de inicio
+                        Marker(
+                            state = MarkerState(position = routePoints.first()),
+                            title = "Inicio",
+                            icon = BitmapDescriptorFactory.defaultMarker(
+                                BitmapDescriptorFactory.HUE_GREEN
+                            ),
+                            zIndex = 6f
+                        )
+
+                        // Marcador de destino
+                        Marker(
+                            state = MarkerState(position = routePoints.last()),
+                            title = "Destino",
+                            icon = BitmapDescriptorFactory.defaultMarker(
+                                BitmapDescriptorFactory.HUE_RED
+                            ),
+                            zIndex = 6f
+                        )
+                    } else if (routePoints.isNotEmpty()) {
+                        Log.w("MapView", "Ruta con solo ${routePoints.size} puntos - necesita al menos 2")
                     }
                 }
 
-                // Loading GPS
-                if (isLoadingLocation) {
+                // FIX: Loading SOLO cuando no hay ubicación
+                if (currentLocation == null) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
                         Surface(
-                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-                            shape = MaterialTheme.shapes.medium,
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+                            shape = MaterialTheme.shapes.large,
                             tonalElevation = 8.dp
                         ) {
                             Column(
-                                modifier = Modifier.padding(24.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
+                                modifier = Modifier.padding(32.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
                             ) {
-                                CircularProgressIndicator()
-                                Spacer(modifier = Modifier.height(16.dp))
-                                Text("Buscando señal GPS...")
+                                CircularProgressIndicator(modifier = Modifier.size(48.dp))
+
+                                Text(
+                                    "Conectando GPS",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold
+                                )
+
+                                Text(
+                                    gpsStatus,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+
+                                Card(
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                                    )
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(16.dp),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(
+                                            "Consejos:",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text("• Sal al exterior",
+                                            style = MaterialTheme.typography.bodySmall)
+                                        Text("• Verifica que el GPS esté activado",
+                                            style = MaterialTheme.typography.bodySmall)
+                                        Text("• Espera 30-60 segundos",
+                                            style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
                             }
+                        }
+                    }
+                } else {
+                    // Banner GPS activo (cuando ya tiene ubicación)
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(8.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.92f),
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.GpsFixed,
+                                null,
+                                modifier = Modifier.size(14.dp),
+                                tint = Color(0xFF43A047)
+                            )
+                            Text(
+                                gpsStatus,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
                         }
                     }
                 }

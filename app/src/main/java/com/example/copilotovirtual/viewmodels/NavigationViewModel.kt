@@ -5,6 +5,7 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
+import android.location.LocationManager
 import android.os.Looper
 import android.util.Log
 import androidx.core.content.ContextCompat
@@ -35,20 +36,20 @@ data class MapMarkerData(
 
 class NavigationViewModel : ViewModel() {
 
-    // Location
     private val _currentLocation = MutableStateFlow<Location?>(null)
     val currentLocation: StateFlow<Location?> = _currentLocation.asStateFlow()
 
-    private val _isLoadingLocation = MutableStateFlow(false)
+    private val _isLoadingLocation = MutableStateFlow(true)
     val isLoadingLocation: StateFlow<Boolean> = _isLoadingLocation.asStateFlow()
 
-    private val _permissionState = MutableStateFlow<LocationPermissionState>(LocationPermissionState.Unknown)
+    private val _permissionState = MutableStateFlow<LocationPermissionState>(
+        LocationPermissionState.Unknown
+    )
     val permissionState: StateFlow<LocationPermissionState> = _permissionState.asStateFlow()
 
     private val _shouldCenterOnLocation = MutableStateFlow(false)
     val shouldCenterOnLocation: StateFlow<Boolean> = _shouldCenterOnLocation.asStateFlow()
 
-    // Navigation
     private val _isNavigating = MutableStateFlow(false)
     val isNavigating: StateFlow<Boolean> = _isNavigating.asStateFlow()
 
@@ -67,78 +68,117 @@ class NavigationViewModel : ViewModel() {
     private val _mapMarkers = MutableStateFlow<List<MapMarkerData>>(emptyList())
     val mapMarkers: StateFlow<List<MapMarkerData>> = _mapMarkers.asStateFlow()
 
-    // Speed monitoring
     private val _currentSpeed = MutableStateFlow(0)
     val currentSpeed: StateFlow<Int> = _currentSpeed.asStateFlow()
 
     private val _speedLimit = MutableStateFlow<Int?>(null)
     val speedLimit: StateFlow<Int?> = _speedLimit.asStateFlow()
 
-    private var lastSpeedWarning = 0L
-    private val SPEED_WARNING_COOLDOWN = 30000L // 30 segundos
+    // Estado GPS para mostrar en UI
+    private val _gpsStatus = MutableStateFlow("Iniciando GPS...")
+    val gpsStatus: StateFlow<String> = _gpsStatus.asStateFlow()
 
-    // Managers
     private var fusedLocationClient: FusedLocationProviderClient? = null
     private var locationCallback: LocationCallback? = null
     private val geofenceManager = GeofenceManager()
     private var ttsHelper: TextToSpeechHelper? = null
+    private var lastSpeedWarning = 0L
+    private val SPEED_WARNING_COOLDOWN = 30000L
 
     fun initializeLocationClient(context: Context) {
         if (fusedLocationClient == null) {
+            Log.d("GPS", "Inicializando FusedLocationClient")
             fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
         }
     }
 
     fun initializeTTS(context: Context) {
         if (ttsHelper == null) {
-            Log.d("NavViewModel", "Inicializando TTS")
             ttsHelper = TextToSpeechHelper(context)
         }
     }
 
     fun checkLocationPermission(context: Context): Boolean {
-        val granted = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.ACCESS_FINE_LOCATION
+        val fine = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.ACCESS_FINE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
 
-        _permissionState.value = if (granted) {
+        val coarse = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+        val granted = fine || coarse
+        Log.d("GPS", "Permiso fino: $fine, grueso: $coarse")
+
+        _permissionState.value = if (granted)
             LocationPermissionState.Granted
-        } else {
+        else
             LocationPermissionState.Denied
-        }
 
         return granted
     }
 
+    // Verificar si el GPS del dispositivo está activado
+    fun isGpsEnabled(context: Context): Boolean {
+        val locationManager = context.getSystemService(Context.LOCATION_SERVICE)
+                as LocationManager
+        val gpsEnabled = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+        val networkEnabled = locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+        Log.d("GPS", "GPS activado: $gpsEnabled, Red activada: $networkEnabled")
+        return gpsEnabled || networkEnabled
+    }
+
     fun startLocationUpdates(context: Context) {
+        Log.d("GPS", "startLocationUpdates llamado")
+
         if (!checkLocationPermission(context)) {
+            Log.e("GPS", "Sin permisos de ubicación")
             _permissionState.value = LocationPermissionState.Denied
+            _isLoadingLocation.value = false
+            return
+        }
+
+        if (!isGpsEnabled(context)) {
+            Log.e("GPS", "GPS desactivado en el dispositivo")
+            _gpsStatus.value = "GPS desactivado. Actívalo en Configuración."
+            _isLoadingLocation.value = false
             return
         }
 
         _isLoadingLocation.value = true
+        _gpsStatus.value = "Buscando señal GPS..."
 
+        // LocationRequest menos estricto para Android 7+
         val locationRequest = LocationRequest.Builder(
             Priority.PRIORITY_HIGH_ACCURACY,
-            2000L // Actualización cada 2 segundos
+            3000L // cada 3 segundos
         ).apply {
             setMinUpdateIntervalMillis(1000L)
-            setWaitForAccurateLocation(true)
+            setMaxUpdateDelayMillis(5000L)
+            // SIN setWaitForAccurateLocation - esto bloqueaba en Android 7
         }.build()
 
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
-                result.lastLocation?.let { location ->
-                    _currentLocation.value = location
-                    _isLoadingLocation.value = false
+                val location = result.lastLocation ?: return
+                Log.d("GPS", "Ubicación recibida: ${location.latitude}, ${location.longitude}, " +
+                        "precisión: ${location.accuracy}m")
 
-                    // Actualizar velocidad
-                    updateSpeed(location)
+                _currentLocation.value = location
+                _isLoadingLocation.value = false
+                _gpsStatus.value = "GPS conectado ✓ (${location.accuracy.toInt()}m)"
 
-                    if (_isNavigating.value) {
-                        checkNavigationProgress(location)
-                    }
+                updateSpeed(location)
+
+                if (_isNavigating.value) {
+                    checkNavigationProgress(location)
+                }
+            }
+
+            override fun onLocationAvailability(availability: LocationAvailability) {
+                Log.d("GPS", "GPS disponible: ${availability.isLocationAvailable}")
+                if (!availability.isLocationAvailable) {
+                    _gpsStatus.value = "Buscando señal GPS..."
                 }
             }
         }
@@ -149,32 +189,49 @@ class NavigationViewModel : ViewModel() {
                 locationCallback!!,
                 Looper.getMainLooper()
             )
+            Log.d("GPS", "requestLocationUpdates registrado correctamente")
+
+            // Intentar obtener última ubicación conocida inmediatamente
+            getLastKnownLocation(context)
+
         } catch (e: SecurityException) {
-            Log.e("NavViewModel", "Error permisos: ${e.message}")
+            Log.e("GPS", "SecurityException: ${e.message}")
             _permissionState.value = LocationPermissionState.Denied
             _isLoadingLocation.value = false
         }
+
     }
 
     fun stopLocationUpdates() {
         locationCallback?.let {
             fusedLocationClient?.removeLocationUpdates(it)
+            Log.d("GPS", "Location updates detenidas")
         }
-        _isLoadingLocation.value = false
+        locationCallback = null
     }
 
     fun getLastKnownLocation(context: Context) {
         if (!checkLocationPermission(context)) return
 
         try {
-            fusedLocationClient?.lastLocation?.addOnSuccessListener { location ->
-                location?.let {
-                    _currentLocation.value = it
-                    _isLoadingLocation.value = false
+            fusedLocationClient?.lastLocation
+                ?.addOnSuccessListener { location ->
+                    if (location != null) {
+                        Log.d("GPS", "Última ubicación conocida: " +
+                                "${location.latitude}, ${location.longitude}")
+                        _currentLocation.value = location
+                        _isLoadingLocation.value = false
+                        _gpsStatus.value = "GPS conectado ✓"
+                    } else {
+                        Log.w("GPS", "lastLocation es null - esperando nueva ubicación")
+                        _gpsStatus.value = "Buscando señal GPS... (sal al exterior)"
+                    }
                 }
-            }
+                ?.addOnFailureListener { e ->
+                    Log.e("GPS", "Error obteniendo lastLocation: ${e.message}")
+                }
         } catch (e: SecurityException) {
-            Log.e("NavViewModel", "Error obteniendo ubicación: ${e.message}")
+            Log.e("GPS", "SecurityException en lastLocation: ${e.message}")
         }
     }
 
@@ -187,52 +244,50 @@ class NavigationViewModel : ViewModel() {
     }
 
     private fun updateSpeed(location: Location) {
-        // Convertir m/s a km/h
-        val speedKmh = (location.speed * 3.6).toInt()
-        _currentSpeed.value = speedKmh.coerceAtLeast(0)
+        val speedKmh = if (location.hasSpeed()) {
+            (location.speed * 3.6).toInt().coerceAtLeast(0)
+        } else {
+            0
+        }
+        _currentSpeed.value = speedKmh
 
-        // Verificar exceso de velocidad
         _speedLimit.value?.let { limit ->
-            if (speedKmh > limit + 5) { // 5 km/h de tolerancia
+            if (speedKmh > limit + 5) {
                 val now = System.currentTimeMillis()
                 if (now - lastSpeedWarning > SPEED_WARNING_COOLDOWN) {
-                    announceSpeedWarning(speedKmh, limit)
+                    announceInstruction(
+                        "Atención. Velocidad excedida. " +
+                                "Límite $limit kilómetros por hora. " +
+                                "Velocidad actual $speedKmh kilómetros por hora."
+                    )
                     lastSpeedWarning = now
                 }
             }
         }
     }
 
-    private fun announceSpeedWarning(currentSpeed: Int, limit: Int) {
-        val warning = "Atención. Velocidad excedida. " +
-                "Límite: $limit kilómetros por hora. " +
-                "Tu velocidad: $currentSpeed kilómetros por hora. " +
-                "Por favor, reduce la velocidad."
-        announceInstruction(warning)
-    }
-
-    fun startNavigation(routeId: String) {
-        val route = Route.getRouteById(routeId)
-        if (route == null) {
-            Log.e("NavViewModel", "Ruta no encontrada: $routeId")
-            return
-        }
-
+    fun startNavigationWithRoute(route: Route) {
         Log.d("NavViewModel", "Iniciando navegación: ${route.name}")
         Log.d("NavViewModel", "Waypoints en ruta: ${route.waypoints.size}")
+
+        // Mostrar primeros 3 puntos para debug
+        route.waypoints.take(3).forEachIndexed { index, point ->
+            Log.d("NavViewModel", "  Punto $index: ${point.latitude}, ${point.longitude}")
+        }
 
         _isNavigating.value = true
         _routePoints.value = route.waypoints
 
-        // Generar segmentos con geocercas
+        Log.d("NavViewModel", "routePoints actualizados con ${_routePoints.value.size} puntos")
+
         val segments = geofenceManager.generateSegments(route.waypoints, route.name)
         _currentSegments.value = segments
 
-        Log.d("NavViewModel", "Segmentos generados: ${segments.size}")
+        Log.d("NavViewModel", "Segmentos creados: ${segments.size}")
 
-        // Establecer límite de velocidad inicial
         if (segments.isNotEmpty()) {
             _speedLimit.value = segments.first().speedLimit
+            Log.d("NavViewModel", "Límite inicial: ${segments.first().speedLimit} km/h")
         }
 
         geofenceManager.reset()
@@ -243,9 +298,17 @@ class NavigationViewModel : ViewModel() {
         announceInstruction(instruction)
     }
 
-    fun stopNavigation() {
-        Log.d("NavViewModel", "Deteniendo navegación")
+    // Mantener la función anterior por si acaso, pero ya no se usará
+    fun startNavigation(routeId: String) {
+        val route = Route.getRouteById(routeId)
+        if (route == null) {
+            Log.e("NavViewModel", "Ruta no encontrada: $routeId")
+            return
+        }
+        startNavigationWithRoute(route)
+    }
 
+    fun stopNavigation() {
         _isNavigating.value = false
         _routePoints.value = emptyList()
         _currentSegments.value = emptyList()
@@ -253,7 +316,6 @@ class NavigationViewModel : ViewModel() {
         _lastInstruction.value = null
         _speedLimit.value = null
         _currentSpeed.value = 0
-
         geofenceManager.reset()
         announceInstruction("Navegación detenida")
     }
@@ -265,9 +327,9 @@ class NavigationViewModel : ViewModel() {
             currentLocation = location,
             segments = _currentSegments.value,
             onEnterSegment = { segment, instruction ->
-                Log.d("NavViewModel", "Geocerca: $instruction")
                 _lastInstruction.value = instruction
-                _navigationProgress.value = geofenceManager.getProgress(_currentSegments.value.size)
+                _navigationProgress.value =
+                    geofenceManager.getProgress(_currentSegments.value.size)
                 _speedLimit.value = segment.speedLimit
                 announceInstruction(instruction)
             }
@@ -275,7 +337,7 @@ class NavigationViewModel : ViewModel() {
     }
 
     fun announceInstruction(instruction: String) {
-        Log.d("NavViewModel", "Anunciando: $instruction")
+        Log.d("TTS", "Anunciando: $instruction")
         ttsHelper?.speak(instruction)
     }
 
