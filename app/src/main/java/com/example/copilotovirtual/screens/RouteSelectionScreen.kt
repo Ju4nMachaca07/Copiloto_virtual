@@ -60,30 +60,29 @@ fun RouteSelectionScreen(
 
         isLoading = true
         errorMessage = null
-        availableRoutes = emptyList()
 
         scope.launch {
             val hasInternet = NetworkUtils.isConnected(context)
 
             if (hasInternet) {
-                // ── ESCENARIO 1: Con internet → Google Directions API ──
                 try {
-                    val apiRoutes = directionsService.getDirections(
-                        origin = origin.coordinates,
-                        destination = dest.coordinates,
+                    // CAMBIA ESTA LÍNEA para usar coordenadas de City.kt:
+                    val routes = directionsService.getDirections(
+                        origin = origin.coordinates,     // Entrada/salida definida en City.kt
+                        destination = dest.coordinates,  // Entrada/salida definida en City.kt
                         alternatives = true,
                         originCityId = origin.id,
                         destinationCityId = dest.id
                     )
 
-                    availableRoutes = apiRoutes.mapIndexed { index, r ->
+                    availableRoutes = routes.mapIndexed { index, r ->
                         Route(
                             id = UUID.randomUUID().toString(),
                             name = if (index == 0) "Ruta Principal" else "Alternativa $index",
                             description = r.summary,
                             startCityId = origin.id,
                             endCityId = dest.id,
-                            waypoints = r.polyline,
+                            waypoints = r.polyline,  // Los waypoints vienen de Google
                             distance = r.distance.toDouble(),
                             estimatedTime = r.duration.toLong()
                         )
@@ -91,32 +90,10 @@ fun RouteSelectionScreen(
                     routeSource = RouteSource.GOOGLE_API
 
                 } catch (e: Exception) {
-                    errorMessage = "Error de conexión: ${e.message}"
+                    errorMessage = "Error: ${e.message}"
                 }
-
-            } else {
-                // ── ESCENARIO 2: Sin internet → Rutas guardadas en Room ──
-                val saved = offlineRepo.getSavedRoutesBetween(origin.id, dest.id)
-
-                if (saved.isNotEmpty()) {
-                    availableRoutes = saved.map { entity ->
-                        with(offlineRepo) { entity.toRoute() }
-                    }
-                    routeSource = RouteSource.ROOM_SAVED
-
-                } else {
-                    // ── ESCENARIO 3: Sin internet NI descarga → Fallback ──
-                    val fallback = Route.getFallbackRoutes(origin.id, dest.id)
-                    availableRoutes = fallback
-                    routeSource = RouteSource.FALLBACK
-
-                    if (fallback.isEmpty()) {
-                        errorMessage = "No hay rutas disponibles.\nDescarga las rutas con WiFi."
-                    }
-                }
+                isLoading = false
             }
-
-            isLoading = false
         }
     }
 

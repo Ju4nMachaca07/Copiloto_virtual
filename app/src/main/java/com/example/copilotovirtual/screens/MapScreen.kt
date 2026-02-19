@@ -1,12 +1,53 @@
 package com.example.copilotovirtual.screens
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.AdminPanelSettings
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material.icons.filled.Route
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.NavigationDrawerItemDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberDrawerState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -23,12 +64,16 @@ fun MapScreen(
     authViewModel: AuthViewModel,
     navViewModel: NavigationViewModel = viewModel()
 ) {
+    val context = LocalContext.current
     val isNavigating by navViewModel.isNavigating.collectAsState()
     val currentUser by authViewModel.currentUser.collectAsState()
+    val currentSegmentIndex by navViewModel.currentSegmentIndex.collectAsState()
+    val geocercas by navViewModel.geocercas.collectAsState()
 
-    val configuration = LocalConfiguration.current
-    val screenWidth = configuration.screenWidthDp.dp
-    val isTablet = screenWidth >= 600.dp
+    // Cargar geocercas al entrar a la pantalla
+    LaunchedEffect(Unit) {
+        navViewModel.loadGeocercasFromKml(context)
+    }
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -40,7 +85,6 @@ fun MapScreen(
             ModalDrawerSheet {
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Header con usuario
                 currentUser?.let { user ->
                     Surface(
                         modifier = Modifier
@@ -68,7 +112,6 @@ fun MapScreen(
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
-                // Opciones del menú
                 NavigationDrawerItem(
                     icon = { Icon(Icons.Default.Home, null) },
                     label = { Text("Inicio") },
@@ -100,10 +143,8 @@ fun MapScreen(
                     }
                 )
 
-                // Panel admin (solo propietario)
                 if (currentUser?.isOwner == true) {
                     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-
                     NavigationDrawerItem(
                         icon = { Icon(Icons.Default.AdminPanelSettings, null) },
                         label = { Text("Panel Admin") },
@@ -123,9 +164,8 @@ fun MapScreen(
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
-                // Logout
                 NavigationDrawerItem(
-                    icon = { Icon(Icons.Default.Logout, null) },
+                    icon = { Icon(Icons.AutoMirrored.Filled.Logout, null) },
                     label = { Text("Cerrar Sesión") },
                     selected = false,
                     onClick = {
@@ -183,7 +223,6 @@ fun MapScreen(
                 Column(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // Botón GPS
                     FloatingActionButton(
                         onClick = { navViewModel.centerOnCurrentLocation() },
                         containerColor = MaterialTheme.colorScheme.primary
@@ -191,7 +230,6 @@ fun MapScreen(
                         Icon(Icons.Default.MyLocation, "Mi ubicación")
                     }
 
-                    // Botón rutas (solo si no está navegando)
                     if (!isNavigating) {
                         FloatingActionButton(
                             onClick = { navController.navigate("routeSelection") },
@@ -207,16 +245,17 @@ fun MapScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues),
-                viewModel = navViewModel
+                viewModel = navViewModel,
+                currentSegmentIndex = currentSegmentIndex,
+                geocercas = geocercas
             )
         }
     }
 
-    // Diálogo de logout
     if (showLogoutDialog) {
         AlertDialog(
             onDismissRequest = { showLogoutDialog = false },
-            icon = { Icon(Icons.Default.Logout, null) },
+            icon = { Icon(Icons.AutoMirrored.Filled.Logout, null) },
             title = { Text("Cerrar Sesión") },
             text = { Text("¿Estás seguro que deseas cerrar sesión?") },
             confirmButton = {
@@ -224,7 +263,6 @@ fun MapScreen(
                     onClick = {
                         authViewModel.logout()
                         showLogoutDialog = false
-                        // Navegar inmediatamente después de confirmar
                         navController.navigate("login") {
                             popUpTo(0) { inclusive = true }
                         }

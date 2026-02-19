@@ -1,15 +1,15 @@
-// components/MapView.kt
 package com.example.copilotovirtual.components
 
 import android.Manifest
-import android.content.Context
-import android.graphics.Paint
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.GpsFixed
+import androidx.compose.material.icons.filled.LocationOff
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,31 +19,40 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import com.example.copilotovirtual.utils.NetworkUtils
+import com.example.copilotovirtual.data.models.Geocerca
+import com.example.copilotovirtual.utils.SpeedLimitZones
 import com.example.copilotovirtual.viewmodels.LocationPermissionState
 import com.example.copilotovirtual.viewmodels.NavigationViewModel
-import com.google.android.gms.maps.CameraUpdateFactory
-import com.google.android.gms.maps.model.*
+import com.google.android.gms.maps.model.BitmapDescriptorFactory
+import com.google.android.gms.maps.model.CameraPosition
+import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.*
-import org.osmdroid.config.Configuration
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
-import org.osmdroid.util.GeoPoint
-import org.osmdroid.views.MapView as OsmMapView
-import org.osmdroid.views.overlay.Polyline as OsmPolyline
-import org.osmdroid.views.overlay.Marker as OsmMarker
+import kotlin.math.abs
+
+fun createPolygonAroundSegment(start: LatLng, end: LatLng, widthMeters: Double): List<LatLng> {
+    val midLat = (start.latitude + end.latitude) / 2
+    val midLng = (start.longitude + end.longitude) / 2
+    val offset = 0.001 // ~111 metros
+    return listOf(
+        LatLng(midLat - offset, midLng - offset),
+        LatLng(midLat - offset, midLng + offset),
+        LatLng(midLat + offset, midLng + offset),
+        LatLng(midLat + offset, midLng - offset)
+    )
+}
 
 @Composable
 fun MapView(
     modifier: Modifier = Modifier,
-    viewModel: NavigationViewModel
+    viewModel: NavigationViewModel,
+    currentSegmentIndex: Int,
+    geocercas: List<Geocerca>
 ) {
     val context = LocalContext.current
-
     val currentLocation by viewModel.currentLocation.collectAsState()
     val routePoints by viewModel.routePoints.collectAsState()
     val permissionState by viewModel.permissionState.collectAsState()
-    val shouldCenter by viewModel.shouldCenterOnLocation.collectAsState()
+    val currentSegments by viewModel.currentSegments.collectAsState()
     val gpsStatus by viewModel.gpsStatus.collectAsState()
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -68,6 +77,10 @@ fun MapView(
         }
     }
 
+    val cameraPositionState = rememberCameraPositionState {
+        position = CameraPosition.fromLatLngZoom(LatLng(-16.4, -71.5), 10f)
+    }
+
     Box(modifier = modifier) {
         when (permissionState) {
             is LocationPermissionState.Denied -> {
@@ -83,17 +96,9 @@ fun MapView(
                 )
             }
             else -> {
-                // Mapa
                 GoogleMap(
                     modifier = Modifier.fillMaxSize(),
-                    cameraPositionState = rememberCameraPositionState {
-                        position = CameraPosition.fromLatLngZoom(
-                            currentLocation?.let {
-                                LatLng(it.latitude, it.longitude)
-                            } ?: LatLng(-15.3500, -75.1100),
-                            if (currentLocation != null) 15f else 8f
-                        )
-                    },
+                    cameraPositionState = cameraPositionState,
                     properties = MapProperties(
                         isMyLocationEnabled = false,
                         mapType = MapType.NORMAL
@@ -104,68 +109,123 @@ fun MapView(
                         compassEnabled = true
                     )
                 ) {
-                    // Ubicación actual del usuario
+                    // Ubicación actual
                     currentLocation?.let { location ->
                         val userPos = LatLng(location.latitude, location.longitude)
-
-                        // Círculo de precisión
-                        Circle(
-                            center = userPos,
-                            radius = location.accuracy.toDouble(),
-                            fillColor = Color(0x220000FF),
-                            strokeColor = Color(0xFF0000FF),
-                            strokeWidth = 2f
-                        )
-
-                        // Marcador de ubicación
                         Marker(
                             state = MarkerState(position = userPos),
                             title = "Tu ubicación",
                             snippet = "Precisión: ${location.accuracy.toInt()}m",
-                            icon = BitmapDescriptorFactory.defaultMarker(
-                                BitmapDescriptorFactory.HUE_AZURE
-                            ),
+                            icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE),
                             zIndex = 10f
                         )
                     }
 
-                    // FIX: Dibujar la ruta si existe
-                    if (routePoints.isNotEmpty() && routePoints.size >= 2) {
-                        Log.d("MapView", "Dibujando ruta con ${routePoints.size} puntos")
+                    // Geocercas del JSON
+                    val colores = listOf(
+                        Color(0xFFE53935), // rojo
+                        Color(0xFFFF9800), // naranja
+                        Color(0xFFFFEB3B), // amarillo
+                        Color(0xFF4CAF50), // verde
+                        Color(0xFF2196F3), // azul
+                        Color(0xFF9C27B0), // morado
+                        Color(0xFFFF4081), // rosa
+                        Color(0xFF00BCD4), // cian
+                        Color(0xFFFF6F00), // ámbar
+                        Color(0xFF8BC34A), // verde claro
+                        Color(0xFF673AB7), // púrpura oscuro
+                        Color(0xFFFF5722), // naranja oscuro
+                        Color(0xFF795548), // marrón
+                        Color(0xFF607D8B), // azul grisáceo
+                        Color(0xFFE91E63)  // rosa intenso
+                    )
 
+                    geocercas.forEach { geocerca ->
+                        // Generar un índice basado en el hash del id para que cada geocerca tenga un color consistente
+                        val colorIndex = abs(geocerca.id.hashCode()) % colores.size
+                        val fillColor = colores[colorIndex].copy(alpha = 0.7f) // 70% opacidad para ver el mapa debajo
+
+                        Polygon(
+                            points = geocerca.polygon,
+                            fillColor = fillColor,
+                            strokeColor = Color.Black,      // borde negro para destacar
+                            strokeWidth = 4f,
+                            zIndex = 10f,
+                            clickable = false
+                        )
+                    }
+
+                    // Ruta azul
+                    if (routePoints.isNotEmpty()) {
                         Polyline(
                             points = routePoints,
                             color = Color(0xFF2196F3),
                             width = 12f,
                             geodesic = true,
-                            zIndex = 5f
+                            zIndex = 4f
                         )
+                    }
 
-                        // Marcador de inicio
-                        Marker(
-                            state = MarkerState(position = routePoints.first()),
-                            title = "Inicio",
-                            icon = BitmapDescriptorFactory.defaultMarker(
-                                BitmapDescriptorFactory.HUE_GREEN
-                            ),
-                            zIndex = 6f
-                        )
+                    // Polígonos de velocidad (segmentos de navegación)
+                    if (currentSegments.isNotEmpty()) {
+                        val maxSegmentsToShow = 20
+                        val startIdx = (currentSegmentIndex - 2).coerceAtLeast(0)
+                        val endIdx = (currentSegmentIndex + maxSegmentsToShow).coerceAtMost(currentSegments.size)
+                        val segmentsToShow = currentSegments.subList(startIdx, endIdx)
 
-                        // Marcador de destino
+                        segmentsToShow.forEachIndexed { idx, segment ->
+                            val fillColor = when (segment.speedLimit) {
+                                in 0..40 -> Color(0x66FF4444)
+                                in 41..70 -> Color(0x66FFAA00)
+                                else -> Color(0x6600FF00)
+                            }
+                            val polygonPoints = createPolygonAroundSegment(
+                                start = segment.startPoint,
+                                end = segment.endPoint,
+                                widthMeters = 30.0
+                            )
+                            Polygon(
+                                points = polygonPoints,
+                                fillColor = fillColor,
+                                strokeColor = fillColor.copy(alpha = 1f),
+                                strokeWidth = 2f,
+                                zIndex = 5f,
+                                clickable = false
+                            )
+                            if (idx + startIdx == currentSegmentIndex) {
+                                Polygon(
+                                    points = polygonPoints,
+                                    fillColor = Color.Transparent,
+                                    strokeColor = Color.Black,
+                                    strokeWidth = 4f,
+                                    zIndex = 6f,
+                                    clickable = false
+                                )
+                            }
+                        }
+                    }
+
+                    // Zonas de velocidad fijas (opcional)
+                    SpeedLimitZones.zones.forEach { zone ->
                         Marker(
-                            state = MarkerState(position = routePoints.last()),
-                            title = "Destino",
-                            icon = BitmapDescriptorFactory.defaultMarker(
-                                BitmapDescriptorFactory.HUE_RED
-                            ),
-                            zIndex = 6f
+                            state = MarkerState(position = zone.center),
+                            title = zone.name,
+                            snippet = "Límite: ${zone.speedLimit} km/h",
+                            icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_BLUE)
                         )
-                    } else if (routePoints.isNotEmpty()) {
-                        Log.w("MapView", "Ruta con solo ${routePoints.size} puntos - necesita al menos 2")
                     }
                 }
 
-                // FIX: Loading SOLO cuando no hay ubicación
+                // Texto superpuesto con el contador de geocercas (FUERA del GoogleMap)
+                Text(
+                    text = "Geocercas: ${geocercas.size}",
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .background(Color.White)
+                        .padding(8.dp)
+                )
+
+                // Loading cuando no hay ubicación
                 if (currentLocation == null) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
@@ -182,20 +242,17 @@ fun MapView(
                                 verticalArrangement = Arrangement.spacedBy(16.dp)
                             ) {
                                 CircularProgressIndicator(modifier = Modifier.size(48.dp))
-
                                 Text(
                                     "Conectando GPS",
                                     style = MaterialTheme.typography.titleLarge,
                                     fontWeight = FontWeight.Bold
                                 )
-
                                 Text(
                                     gpsStatus,
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                    textAlign = TextAlign.Center
                                 )
-
                                 Card(
                                     colors = CardDefaults.cardColors(
                                         containerColor = MaterialTheme.colorScheme.primaryContainer
@@ -210,19 +267,16 @@ fun MapView(
                                             style = MaterialTheme.typography.titleSmall,
                                             fontWeight = FontWeight.Bold
                                         )
-                                        Text("• Sal al exterior",
-                                            style = MaterialTheme.typography.bodySmall)
-                                        Text("• Verifica que el GPS esté activado",
-                                            style = MaterialTheme.typography.bodySmall)
-                                        Text("• Espera 30-60 segundos",
-                                            style = MaterialTheme.typography.bodySmall)
+                                        Text("• Sal al exterior", style = MaterialTheme.typography.bodySmall)
+                                        Text("• Verifica que el GPS esté activado", style = MaterialTheme.typography.bodySmall)
+                                        Text("• Espera 30-60 segundos", style = MaterialTheme.typography.bodySmall)
                                     }
                                 }
                             }
                         }
                     }
                 } else {
-                    // Banner GPS activo (cuando ya tiene ubicación)
+                    // Banner GPS activo
                     Surface(
                         modifier = Modifier
                             .align(Alignment.TopStart)
@@ -254,172 +308,6 @@ fun MapView(
     }
 }
 
-// MAPA ONLINE CON GOOGLE MAPS
-@Composable
-fun OnlineMapView(
-    currentLocation: android.location.Location?,
-    routePoints: List<com.google.android.gms.maps.model.LatLng>,
-    shouldCenter: Boolean,
-    onCentered: () -> Unit
-) {
-    val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(
-            LatLng(-15.3500, -75.1100), 8f
-        )
-    }
-
-    LaunchedEffect(shouldCenter, currentLocation) {
-        if (shouldCenter && currentLocation != null) {
-            cameraPositionState.animate(
-                CameraUpdateFactory.newLatLngZoom(
-                    LatLng(currentLocation.latitude, currentLocation.longitude), 15f
-                ), 1000
-            )
-            onCentered()
-        }
-    }
-
-    LaunchedEffect(currentLocation) {
-        if (currentLocation != null && cameraPositionState.position.zoom < 10f) {
-            cameraPositionState.animate(
-                CameraUpdateFactory.newLatLngZoom(
-                    LatLng(currentLocation.latitude, currentLocation.longitude), 12f
-                ), 1500
-            )
-        }
-    }
-
-    GoogleMap(
-        modifier = Modifier.fillMaxSize(),
-        cameraPositionState = cameraPositionState,
-        properties = MapProperties(mapType = MapType.NORMAL),
-        uiSettings = MapUiSettings(
-            zoomControlsEnabled = false,
-            myLocationButtonEnabled = false,
-            compassEnabled = true
-        )
-    ) {
-        currentLocation?.let { location ->
-            val userPos = LatLng(location.latitude, location.longitude)
-            Circle(
-                center = userPos,
-                radius = location.accuracy.toDouble(),
-                fillColor = Color(0x220000FF),
-                strokeColor = Color(0xFF0000FF),
-                strokeWidth = 2f
-            )
-            Marker(
-                state = MarkerState(position = userPos),
-                title = "Tu ubicación",
-                icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE)
-            )
-        }
-
-        if (routePoints.size >= 2) {
-            Polyline(
-                points = routePoints,
-                color = Color(0xFF2196F3),
-                width = 12f,
-                geodesic = true
-            )
-            Marker(
-                state = MarkerState(position = routePoints.first()),
-                title = "Inicio",
-                icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN)
-            )
-            Marker(
-                state = MarkerState(position = routePoints.last()),
-                title = "Destino",
-                icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)
-            )
-        }
-    }
-}
-
-// MAPA OFFLINE CON OSMDROID
-@Composable
-fun OfflineMapView(
-    context: Context,
-    currentLocation: android.location.Location?,
-    routePoints: List<com.google.android.gms.maps.model.LatLng>,
-    shouldCenter: Boolean
-) {
-    // Configurar OSMDroid
-    LaunchedEffect(Unit) {
-        Configuration.getInstance().apply {
-            userAgentValue = context.packageName
-            osmdroidBasePath = context.getExternalFilesDir(null)
-            osmdroidTileCache = context.getExternalFilesDir("tiles")
-        }
-    }
-
-    AndroidView(
-        factory = { ctx ->
-            OsmMapView(ctx).apply {
-                setTileSource(TileSourceFactory.MAPNIK)
-                setMultiTouchControls(true)
-                controller.setZoom(12.0)
-
-                // Centro inicial en Marcona
-                controller.setCenter(GeoPoint(-15.3500, -75.1100))
-            }
-        },
-        update = { mapView ->
-            mapView.overlays.clear()
-
-            // Ubicación actual
-            currentLocation?.let { location ->
-                val marker = OsmMarker(mapView).apply {
-                    position = GeoPoint(location.latitude, location.longitude)
-                    title = "Tu ubicación"
-                    setAnchor(OsmMarker.ANCHOR_CENTER, OsmMarker.ANCHOR_BOTTOM)
-                }
-                mapView.overlays.add(marker)
-
-                if (shouldCenter) {
-                    mapView.controller.animateTo(
-                        GeoPoint(location.latitude, location.longitude)
-                    )
-                    mapView.controller.setZoom(15.0)
-                }
-            }
-
-            // Ruta
-            if (routePoints.size >= 2) {
-                val polyline = OsmPolyline().apply {
-                    setPoints(routePoints.map { GeoPoint(it.latitude, it.longitude) })
-                    outlinePaint.color = android.graphics.Color.BLUE
-                    outlinePaint.strokeWidth = 12f
-                    outlinePaint.style = Paint.Style.STROKE
-                }
-                mapView.overlays.add(polyline)
-
-                // Marcador inicio
-                val startMarker = OsmMarker(mapView).apply {
-                    position = GeoPoint(
-                        routePoints.first().latitude,
-                        routePoints.first().longitude
-                    )
-                    title = "Inicio"
-                }
-                mapView.overlays.add(startMarker)
-
-                // Marcador fin
-                val endMarker = OsmMarker(mapView).apply {
-                    position = GeoPoint(
-                        routePoints.last().latitude,
-                        routePoints.last().longitude
-                    )
-                    title = "Destino"
-                }
-                mapView.overlays.add(endMarker)
-            }
-
-            mapView.invalidate()
-        }
-    )
-}
-
 @Composable
 fun PermissionDeniedScreen(onRequestPermission: () -> Unit) {
     Column(
@@ -433,8 +321,10 @@ fun PermissionDeniedScreen(onRequestPermission: () -> Unit) {
             tint = MaterialTheme.colorScheme.error
         )
         Spacer(modifier = Modifier.height(24.dp))
-        Text("Permisos de ubicación requeridos",
-            style = MaterialTheme.typography.headlineSmall)
+        Text(
+            "Permisos de ubicación requeridos",
+            style = MaterialTheme.typography.headlineSmall
+        )
         Spacer(modifier = Modifier.height(16.dp))
         Text(
             "Esta app necesita GPS para la navegación",
@@ -442,7 +332,10 @@ fun PermissionDeniedScreen(onRequestPermission: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(modifier = Modifier.height(32.dp))
-        Button(onClick = onRequestPermission, modifier = Modifier.fillMaxWidth()) {
+        Button(
+            onClick = onRequestPermission,
+            modifier = Modifier.fillMaxWidth()
+        ) {
             Icon(Icons.Default.LocationOn, null)
             Spacer(modifier = Modifier.width(8.dp))
             Text("Conceder Permisos GPS")

@@ -31,10 +31,6 @@ class AccessCodeRepository(private val context: Context) {
             }
         }
 
-    suspend fun initialize() {
-        // No hacer nada, empezar con lista vacía
-    }
-
     private suspend fun saveDrivers(drivers: List<AuthorizedDriver>) {
         context.driversDataStore.edit { preferences ->
             preferences[DRIVERS_KEY] = gson.toJson(drivers)

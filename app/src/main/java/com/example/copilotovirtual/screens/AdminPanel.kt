@@ -27,7 +27,7 @@ fun AdminPanelScreen(onBack: () -> Unit) {
     // Observar cambios en tiempo real
     val drivers by repository.observeDrivers().collectAsState(initial = emptyList())
 
-    var selectedTab by remember { mutableStateOf(0) }
+    var selectedTab by remember { mutableIntStateOf(0) }
     var showAddDialog by remember { mutableStateOf(false) }
     var selectedDriver by remember { mutableStateOf<AuthorizedDriver?>(null) }
     var isLoading by remember { mutableStateOf(false) }

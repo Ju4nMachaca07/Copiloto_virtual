@@ -201,15 +201,8 @@ data class Route(
             )
         )
 
-        fun getRouteById(id: String): Route? {
-            val route = fallbackRoutes.find { it.id == id }
-            if (route != null) {
-                Log.d("Route", "Ruta encontrada: ${route.name}")
-            } else {
-                Log.e("Route", "Ruta NO encontrada: $id")
-            }
-            return route
-        }
+        fun getRouteById(id: String): Route? =
+            fallbackRoutes.find { it.id == id }
 
         fun getFallbackRoutes(
             originCityId: String,
@@ -217,6 +210,10 @@ data class Route(
         ): List<Route> = fallbackRoutes.filter {
             it.startCityId == originCityId &&
                     it.endCityId == destCityId
+        }
+
+        fun getRoutesBetween(originId: String, destId: String): List<Route> {
+            return emptyList()
         }
     }
 }

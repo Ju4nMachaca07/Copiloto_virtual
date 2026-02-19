@@ -1,8 +1,8 @@
-// screens/NavigationScreen.kt
 package com.example.copilotovirtual.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -26,17 +26,21 @@ fun NavigationScreen(
 ) {
     val context = LocalContext.current
 
-    // Leer ruta del ViewModel compartido
     val route by sharedRouteViewModel.selectedRoute.collectAsState()
-
     val currentSpeed by navViewModel.currentSpeed.collectAsState()
     val speedLimit by navViewModel.speedLimit.collectAsState()
     val navigationProgress by navViewModel.navigationProgress.collectAsState()
     val lastInstruction by navViewModel.lastInstruction.collectAsState()
+    val currentSegmentIndex by navViewModel.currentSegmentIndex.collectAsState()
+    val geocercas by navViewModel.geocercas.collectAsState()  // <-- AÑADIDO
 
     var showStopDialog by remember { mutableStateOf(false) }
 
-    // Si no hay ruta, volver atrás
+    // Cargar geocercas al entrar
+    LaunchedEffect(Unit) {
+        navViewModel.loadGeocercasFromKml(context)
+    }
+
     if (route == null) {
         LaunchedEffect(Unit) {
             onBack()
@@ -44,7 +48,6 @@ fun NavigationScreen(
         return
     }
 
-    // Inicializar GPS y navegación
     LaunchedEffect(route) {
         navViewModel.initializeTTS(context)
         navViewModel.initializeLocationClient(context)
@@ -115,7 +118,9 @@ fun NavigationScreen(
         ) {
             MapView(
                 modifier = Modifier.fillMaxSize(),
-                viewModel = navViewModel
+                viewModel = navViewModel,
+                currentSegmentIndex = currentSegmentIndex,
+                geocercas = geocercas  // <-- AÑADIDO
             )
 
             Speedometer(
@@ -193,7 +198,7 @@ fun NavigationInfoBar(
                 enabled = instruction != null
             ) {
                 Icon(
-                    Icons.Default.VolumeUp,
+                    Icons.AutoMirrored.Filled.VolumeUp,
                     "Repetir",
                     tint = if (instruction != null)
                         MaterialTheme.colorScheme.primary
