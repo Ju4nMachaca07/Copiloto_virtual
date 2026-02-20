@@ -143,7 +143,7 @@ fun MapScreen(
                     }
                 )
 
-                if (currentUser?.isOwner == true) {
+                if (currentUser?.role == "admin") {
                     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                     NavigationDrawerItem(
                         icon = { Icon(Icons.Default.AdminPanelSettings, null) },

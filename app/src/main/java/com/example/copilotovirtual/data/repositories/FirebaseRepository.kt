@@ -10,15 +10,112 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
+import at.favre.lib.crypto.bcrypt.BCrypt
+import com.example.copilotovirtual.data.models.User
 
 class FirebaseRepository {
 
     private val firestore = FirebaseFirestore.getInstance()
     private val driversCollection = firestore.collection("authorized_drivers")
+    private val usuariosCollection = firestore.collection("usuarios")
 
-    /**
-     * Observar cambios en tiempo real
-     */
+    suspend fun getUserByUsername(username: String): User? {
+        return try {
+            val query = usuariosCollection
+                .whereEqualTo("username", username.lowercase())
+                .limit(1)
+                .get()
+                .await()
+            if (query.isEmpty) null
+            else query.documents.first().toObject(User::class.java)?.copy(uid = query.documents.first().id)
+        } catch (e: Exception) {
+            Log.e("FirebaseRepo", "Error get usuario: ${e.message}")
+            null
+        }
+    }
+
+    suspend fun createUser(
+        nombre: String,
+        username: String,
+        passwordHash: String,
+        role: String
+    ): Result<User> {
+        return try {
+            val normalizedUsername = username.lowercase()
+            // Verificar si ya existe
+            val existing = usuariosCollection
+                .whereEqualTo("username", normalizedUsername)
+                .get()
+                .await()
+            if (!existing.isEmpty) {
+                return Result.failure(Exception("El nombre de usuario ya existe"))
+            }
+
+            val nuevo = User(
+                username = normalizedUsername,
+                nombre = nombre,
+                passwordHash = "",
+                role = role,
+                primerAcceso = true,
+                activo = true,
+                createdAt = System.currentTimeMillis(),
+                updatedAt = System.currentTimeMillis()
+            )
+
+            val docRef = usuariosCollection.add(nuevo).await()
+            Result.success(nuevo.copy(uid = docRef.id))
+        } catch (e: Exception) {
+            Log.e("FirebaseRepo", "Error createUser: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updatePassword(uid: String, newPasswordHash: String): Result<Unit> {
+        return try {
+            usuariosCollection.document(uid)
+                .update(
+                    mapOf(
+                        "passwordHash" to newPasswordHash,
+                        "primerAcceso" to false,
+                        "updatedAt" to System.currentTimeMillis()
+                    )
+                )
+                .await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("FirebaseRepo", "Error updatePassword: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
+    suspend fun setUsuarioActivo(uid: String, activo: Boolean): Result<Unit> {
+        return try {
+            usuariosCollection.document(uid)
+                .update("activo", activo, "updatedAt", System.currentTimeMillis())
+                .await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("FirebaseRepo", "Error setUsuarioActivo: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
+    fun observeConductores(): Flow<List<User>> = callbackFlow {
+        val listener = usuariosCollection
+            .whereEqualTo("role", "conductor")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e("FirebaseRepo", "Error observando conductores: ${error.message}")
+                    return@addSnapshotListener
+                }
+                val conductores = snapshot?.documents?.mapNotNull { doc ->
+                    doc.toObject(User::class.java)?.copy(uid = doc.id)
+                } ?: emptyList()
+                trySend(conductores)
+            }
+        awaitClose { listener.remove() }
+    }
+
     fun observeDrivers(): Flow<List<AuthorizedDriver>> = callbackFlow {
         val listener = driversCollection.addSnapshotListener { snapshot, error ->
             if (error != null) {
@@ -41,9 +138,6 @@ class FirebaseRepository {
         awaitClose { listener.remove() }
     }
 
-    /**
-     * Obtener todos los conductores (una sola vez)
-     */
     @RequiresApi(Build.VERSION_CODES.O)
     suspend fun getDrivers(): Result<List<AuthorizedDriver>> {
         return try {
@@ -58,9 +152,6 @@ class FirebaseRepository {
         }
     }
 
-    /**
-     * Validar credenciales
-     */
     @RequiresApi(Build.VERSION_CODES.O)
     suspend fun validateCredentials(
         code: String,
@@ -97,9 +188,6 @@ class FirebaseRepository {
         }
     }
 
-    /**
-     * Marcar como registrado
-     */
     suspend fun markAsRegistered(driverId: String): Result<Unit> {
         return try {
             driversCollection.document(driverId)
@@ -112,9 +200,6 @@ class FirebaseRepository {
         }
     }
 
-    /**
-     * Generar código automático
-     */
     @RequiresApi(Build.VERSION_CODES.O)
     suspend fun generateAutoCode(username: String): Result<AuthorizedDriver> {
         return try {
@@ -158,9 +243,6 @@ class FirebaseRepository {
         }
     }
 
-    /**
-     * Crear código manual
-     */
     @RequiresApi(Build.VERSION_CODES.O)
     suspend fun createManualCode(
         customCode: String,
@@ -208,9 +290,6 @@ class FirebaseRepository {
         }
     }
 
-    /**
-     * Revocar código
-     */
     suspend fun revokeCode(driverId: String, reason: String): Result<Unit> {
         return try {
             driversCollection.document(driverId)
@@ -229,9 +308,6 @@ class FirebaseRepository {
         }
     }
 
-    /**
-     * Reactivar código
-     */
     suspend fun reactivateCode(driverId: String): Result<Unit> {
         return try {
             driversCollection.document(driverId)
@@ -250,9 +326,7 @@ class FirebaseRepository {
         }
     }
 
-    /**
-     * Eliminar código
-     */
+    //Eliminar código
     @RequiresApi(Build.VERSION_CODES.O)
     suspend fun deleteCode(driverId: String): Result<Unit> {
         return try {
@@ -269,6 +343,36 @@ class FirebaseRepository {
 
         } catch (e: Exception) {
             Log.e("FirebaseRepo", "Error eliminando: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
+    suspend fun crearConductorSinPassword(nombre: String, username: String): Result<User> {
+        return try {
+            val normalizedUsername = username.lowercase()
+            // Verificar si ya existe
+            val existente = usuariosCollection
+                .whereEqualTo("username", normalizedUsername)
+                .get()
+                .await()
+            if (!existente.isEmpty) {
+                return Result.failure(Exception("El nombre de usuario ya existe"))
+            }
+
+            val nuevo = User(
+                username = normalizedUsername,
+                nombre = nombre,
+                passwordHash = "", // vacío
+                role = "conductor",
+                primerAcceso = true,
+                activo = true,
+                createdAt = System.currentTimeMillis(),
+                updatedAt = System.currentTimeMillis()
+            )
+
+            val docRef = usuariosCollection.add(nuevo).await()
+            Result.success(nuevo.copy(uid = docRef.id))
+        } catch (e: Exception) {
             Result.failure(e)
         }
     }

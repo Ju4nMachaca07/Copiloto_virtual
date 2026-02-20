@@ -37,6 +37,11 @@ sealed class LocationPermissionState {
     object Denied : LocationPermissionState()
     object Unknown : LocationPermissionState()
 }
+sealed class NavigationEvent {
+    object Home : NavigationEvent()
+    object AdminPanel : NavigationEvent()
+    object ChangePassword : NavigationEvent()
+}
 
 class NavigationViewModel(application: Application) : AndroidViewModel(application) {
 

@@ -90,7 +90,7 @@ fun HomeScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
-                    if (user.isOwner) {
+                    if (user.role == "admin") {
                         Spacer(modifier = Modifier.height(8.dp))
                         AssistChip(
                             onClick = { },
@@ -152,19 +152,8 @@ fun HomeScreen(
                     }
                 }
 
-                // Ver mapa
-                OutlinedButton(
-                    onClick = { navController.navigate("downloadRoutes") },
-                    modifier = Modifier.fillMaxWidth().height(60.dp),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Icon(Icons.Default.Download, null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Descargar Rutas Offline")
-                }
-
                 // Panel admin (solo propietario)
-                if (currentUser?.isOwner == true) {
+                if (currentUser?.role == "admin") {
                     OutlinedButton(
                         onClick = { navController.navigate("adminPanel") },
                         modifier = Modifier
@@ -215,7 +204,6 @@ fun HomeScreen(
                     onClick = {
                         authViewModel.logout()
                         showLogoutDialog = false
-                        // Navegar inmediatamente después de confirmar
                         navController.navigate("login") {
                             popUpTo(0) { inclusive = true }
                         }

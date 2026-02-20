@@ -1,7 +1,5 @@
 package com.example.copilotovirtual.screens
 
-import android.os.Build
-import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
@@ -16,25 +14,36 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.example.copilotovirtual.viewmodels.AuthViewModel
 
-@RequiresApi(Build.VERSION_CODES.O)
 @Composable
 fun LoginScreen(
     authViewModel: AuthViewModel,
-    onLoginSuccess: () -> Unit
+    onLoginSuccess: (isAdmin: Boolean, primerAcceso: Boolean) -> Unit
 ) {
     val isLoading by authViewModel.isLoading.collectAsState()
     val errorMessage by authViewModel.errorMessage.collectAsState()
     val isLoggedIn by authViewModel.isLoggedIn.collectAsState()
+    val navigationEvent by authViewModel.navigationEvent.collectAsState()
 
-    var isAdminMode by remember { mutableStateOf(false) }
-    var accessCode by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
 
-    LaunchedEffect(isLoggedIn) {
-        if (isLoggedIn) {
-            onLoginSuccess()
+    // Efecto para manejar la navegación según el evento
+    LaunchedEffect(navigationEvent) {
+        when (navigationEvent) {
+            AuthViewModel.NavigationEvent.AdminPanel -> {
+                onLoginSuccess(true, false)
+                authViewModel.clearNavigation()
+            }
+            AuthViewModel.NavigationEvent.Home -> {
+                onLoginSuccess(false, false)
+                authViewModel.clearNavigation()
+            }
+            AuthViewModel.NavigationEvent.ChangePassword -> {
+                onLoginSuccess(false, true)
+                authViewModel.clearNavigation()
+            }
+            null -> {}
         }
     }
 
@@ -78,206 +87,56 @@ fun LoginScreen(
                 }
             }
 
-            // Toggle Admin / Trabajador
+            // Campos de login
             item {
-                Row(
+                OutlinedTextField(
+                    value = username,
+                    onValueChange = { username = it.lowercase() },
+                    label = { Text("Usuario") },
+                    leadingIcon = { Icon(Icons.Default.Person, null) },
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center
+                    singleLine = true,
+                    enabled = !isLoading
+                )
+            }
+
+            item {
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("Contraseña") },
+                    leadingIcon = { Icon(Icons.Default.Lock, null) },
+                    trailingIcon = {
+                        IconButton(onClick = { showPassword = !showPassword }) {
+                            Icon(
+                                if (showPassword) Icons.Default.Visibility
+                                else Icons.Default.VisibilityOff,
+                                "Mostrar"
+                            )
+                        }
+                    },
+                    visualTransformation = if (showPassword)
+                        VisualTransformation.None
+                    else PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    enabled = !isLoading
+                )
+            }
+
+            item {
+                Button(
+                    onClick = { authViewModel.login(username, password) },
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    enabled = !isLoading && username.isNotBlank() && password.isNotBlank()
                 ) {
-                    FilterChip(
-                        selected = !isAdminMode,
-                        onClick = {
-                            isAdminMode = false
-                            authViewModel.clearError()
-                        },
-                        label = { Text("Trabajador") },
-                        leadingIcon = if (!isAdminMode) {
-                            { Icon(Icons.Default.Person, null, Modifier.size(18.dp)) }
-                        } else null
-                    )
-
-                    Spacer(modifier = Modifier.width(12.dp))
-
-                    FilterChip(
-                        selected = isAdminMode,
-                        onClick = {
-                            isAdminMode = true
-                            authViewModel.clearError()
-                        },
-                        label = { Text("Administrador") },
-                        leadingIcon = if (isAdminMode) {
-                            { Icon(Icons.Default.AdminPanelSettings, null, Modifier.size(18.dp)) }
-                        } else null
-                    )
-                }
-            }
-
-            // MODO TRABAJADOR
-            if (!isAdminMode) {
-                item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer
+                    if (isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = MaterialTheme.colorScheme.onPrimary
                         )
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Key, null)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    "Acceso para Conductores",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                "Ingresa el codigo y usuario que te proporcionaron",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-
-                item {
-                    OutlinedTextField(
-                        value = accessCode,
-                        onValueChange = {
-                            accessCode = it.uppercase()
-                            authViewModel.clearError()
-                        },
-                        label = { Text("Codigo de Acceso") },
-                        placeholder = { Text("COND-001") },
-                        leadingIcon = { Icon(Icons.Default.VpnKey, null) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        enabled = !isLoading
-                    )
-                }
-
-                item {
-                    OutlinedTextField(
-                        value = username,
-                        onValueChange = {
-                            username = it.lowercase()
-                            authViewModel.clearError()
-                        },
-                        label = { Text("Nombre de Usuario") },
-                        placeholder = { Text("carlos") },
-                        leadingIcon = { Icon(Icons.Default.Person, null) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        enabled = !isLoading
-                    )
-                }
-
-                item {
-                    Button(
-                        onClick = {
-                            authViewModel.workerLogin(accessCode, username)
-                        },
-                        modifier = Modifier.fillMaxWidth().height(56.dp),
-                        enabled = !isLoading &&
-                                accessCode.isNotBlank() &&
-                                username.isNotBlank()
-                    ) {
-                        if (isLoading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                color = MaterialTheme.colorScheme.onPrimary
-                            )
-                        } else {
-                            Icon(Icons.Default.Login, null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("ACCEDER")
-                        }
-                    }
-                }
-            }
-            // MODO ADMIN
-            else {
-                item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.tertiaryContainer
-                        )
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.AdminPanelSettings, null)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    "Acceso Administrativo",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                "Solo para propietario del sistema",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-
-                item {
-                    OutlinedTextField(
-                        value = username,
-                        onValueChange = { username = it.lowercase() },
-                        label = { Text("Usuario Admin") },
-                        leadingIcon = { Icon(Icons.Default.Person, null) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        enabled = !isLoading
-                    )
-                }
-
-                item {
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = { password = it },
-                        label = { Text("Contraseña") },
-                        leadingIcon = { Icon(Icons.Default.Lock, null) },
-                        trailingIcon = {
-                            IconButton(onClick = { showPassword = !showPassword }) {
-                                Icon(
-                                    if (showPassword) Icons.Default.Visibility
-                                    else Icons.Default.VisibilityOff,
-                                    "Mostrar"
-                                )
-                            }
-                        },
-                        visualTransformation = if (showPassword)
-                            VisualTransformation.None
-                        else PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        enabled = !isLoading
-                    )
-                }
-
-                item {
-                    Button(
-                        onClick = { authViewModel.adminLogin(username, password) },
-                        modifier = Modifier.fillMaxWidth().height(56.dp),
-                        enabled = !isLoading && username.isNotBlank() && password.isNotBlank(),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.tertiary
-                        )
-                    ) {
-                        if (isLoading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                color = MaterialTheme.colorScheme.onTertiary
-                            )
-                        } else {
-                            Text("INICIAR SESION ADMIN")
-                        }
+                    } else {
+                        Text("INICIAR SESIÓN")
                     }
                 }
             }

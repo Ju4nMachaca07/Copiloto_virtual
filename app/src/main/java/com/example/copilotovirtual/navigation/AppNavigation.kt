@@ -1,8 +1,8 @@
-// navigation/AppNavigation.kt
 package com.example.copilotovirtual.navigation
 
 import android.content.Context
 import android.os.Build
+import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
@@ -17,15 +17,10 @@ import com.example.copilotovirtual.viewmodels.SharedRouteViewModel
 @RequiresApi(Build.VERSION_CODES.O)
 @Composable
 fun AppNavigation() {
-    val navController = rememberNavController()
-    val context = LocalContext.current
-
-    val authViewModel: AuthViewModel = viewModel(
-        factory = AuthViewModelFactory(context)
-    )
-
-    //ViewModel compartido entre pantallas
+    val context = LocalContext.current // <-- 1. Obtener contexto
     val sharedRouteViewModel: SharedRouteViewModel = viewModel()
+    val navController = rememberNavController()
+    val authViewModel: AuthViewModel = viewModel(factory = AuthViewModelFactory(context))
 
     NavHost(
         navController = navController,
@@ -34,10 +29,37 @@ fun AppNavigation() {
         composable("login") {
             LoginScreen(
                 authViewModel = authViewModel,
-                onLoginSuccess = {
-                    navController.navigate("home") {
-                        popUpTo("login") { inclusive = true }
-                        launchSingleTop = true
+                onLoginSuccess = { isAdmin, primerAcceso ->
+                    when {
+                        isAdmin -> navController.navigate("adminPanel") {
+                            popUpTo("login") { inclusive = true }
+                        }
+                        primerAcceso -> navController.navigate("changePassword") {
+                            popUpTo("login") { inclusive = true }
+                        }
+                        else -> navController.navigate("home") {
+                            popUpTo("login") { inclusive = true }
+                        }
+                    }
+                }
+            )
+        }
+
+        // Ruta unificada para cambiar contraseña (primer acceso)
+        composable("changePassword") {
+            ChangePasswordScreen(
+                authViewModel = authViewModel,
+                onPasswordChanged = {
+                    // Después de cambiar la contraseña, vamos a la pantalla principal según el rol
+                    val currentUser = authViewModel.currentUser.value
+                    if (currentUser?.role == "admin") {
+                        navController.navigate("adminPanel") {
+                            popUpTo("changePassword") { inclusive = true }
+                        }
+                    } else {
+                        navController.navigate("home") {
+                            popUpTo("changePassword") { inclusive = true }
+                        }
                     }
                 }
             )
@@ -60,18 +82,13 @@ fun AppNavigation() {
         composable("routeSelection") {
             RouteSelectionScreen(
                 onRouteSelected = { route ->
-                    // Guardar ruta en ViewModel compartido
                     sharedRouteViewModel.setRoute(route)
-                    // Navegar solo con señal
                     navController.navigate("navigation")
                 },
-                onBack = {
-                    navController.popBackStack()
-                }
+                onBack = { navController.popBackStack() }
             )
         }
 
-        //Ruta simple sin argumentos
         composable("navigation") {
             NavigationScreen(
                 sharedRouteViewModel = sharedRouteViewModel,
@@ -84,7 +101,11 @@ fun AppNavigation() {
 
         composable("adminPanel") {
             AdminPanelScreen(
-                onBack = { navController.popBackStack() }
+                onBack = {
+                    navController.navigate("home") {
+                        popUpTo("adminPanel") { inclusive = true }
+                    }
+                }
             )
         }
 

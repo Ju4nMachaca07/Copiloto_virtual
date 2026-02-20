@@ -10,10 +10,6 @@ object MapUtils {
 
     private const val EARTH_RADIUS_METERS = 6371000.0
 
-    /**
-     * Calcular distancia entre dos puntos usando fórmula de Haversine
-     * @return distancia en metros
-     */
     fun calculateDistance(point1: LatLng, point2: LatLng): Double {
         val lat1 = Math.toRadians(point1.latitude)
         val lon1 = Math.toRadians(point1.longitude)
@@ -30,9 +26,6 @@ object MapUtils {
         return EARTH_RADIUS_METERS * c
     }
 
-    /**
-     * Calcular distancia usando Location (alternativa)
-     */
     fun calculateDistanceSimple(point1: LatLng, point2: LatLng): Float {
         val results = FloatArray(1)
         Location.distanceBetween(
@@ -45,9 +38,6 @@ object MapUtils {
         return results[0]
     }
 
-    /**
-     * Formatear distancia en metros a texto legible
-     */
     @SuppressLint("DefaultLocale")
     fun formatDistance(meters: Double): String {
         return when {
@@ -57,9 +47,6 @@ object MapUtils {
         }
     }
 
-    /**
-     * Formatear duración en horas a texto legible
-     */
     @SuppressLint("DefaultLocale")
     fun formatDuration(hours: Double): String {
         val totalMinutes = (hours * 60).toInt()
@@ -73,10 +60,6 @@ object MapUtils {
         }
     }
 
-    /**
-     * Calcular bearing (dirección) entre dos puntos
-     * @return ángulo en grados (0-360)
-     */
     fun calculateBearing(start: LatLng, end: LatLng): Double {
         val lat1 = Math.toRadians(start.latitude)
         val lon1 = Math.toRadians(start.longitude)
@@ -92,9 +75,6 @@ object MapUtils {
         return (bearing + 360) % 360
     }
 
-    /**
-     * Convertir bearing a dirección cardinal
-     */
     fun bearingToDirection(bearing: Double): String {
         return when {
             bearing < 22.5 || bearing >= 337.5 -> "norte"
@@ -108,9 +88,6 @@ object MapUtils {
         }
     }
 
-    /**
-     * Calcular punto medio entre dos coordenadas
-     */
     fun getMidpoint(point1: LatLng, point2: LatLng): LatLng {
         val lat1 = Math.toRadians(point1.latitude)
         val lon1 = Math.toRadians(point1.longitude)
@@ -139,9 +116,6 @@ object MapUtils {
         return distanceKm / avgSpeedKmh
     }
 
-    /**
-     * Obtener límites geográficos de una lista de puntos
-     */
     fun getRouteBounds(waypoints: List<LatLng>): LatLngBounds? {
         if (waypoints.isEmpty()) return null
 
@@ -152,9 +126,6 @@ object MapUtils {
         return builder.build()
     }
 
-    /**
-     * Generar puntos intermedios entre dos coordenadas
-     */
     fun interpolatePoints(
         start: LatLng,
         end: LatLng,

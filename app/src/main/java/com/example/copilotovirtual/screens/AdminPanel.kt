@@ -1,22 +1,74 @@
 package com.example.copilotovirtual.screens
 
-import androidx.compose.foundation.layout.*
+import android.util.Log
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.Badge
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.example.copilotovirtual.data.models.AuthorizedDriver
+import at.favre.lib.crypto.bcrypt.BCrypt
+import com.example.copilotovirtual.data.models.User
 import com.example.copilotovirtual.data.repositories.FirebaseRepository
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -24,13 +76,18 @@ fun AdminPanelScreen(onBack: () -> Unit) {
     val repository = remember { FirebaseRepository() }
     val scope = rememberCoroutineScope()
 
-    // Observar cambios en tiempo real
-    val drivers by repository.observeDrivers().collectAsState(initial = emptyList())
+    // Observar conductores (role = "conductor")
+    val conductores by repository.observeConductores().collectAsState(initial = emptyList())
 
     var selectedTab by remember { mutableIntStateOf(0) }
     var showAddDialog by remember { mutableStateOf(false) }
-    var selectedDriver by remember { mutableStateOf<AuthorizedDriver?>(null) }
+    var selectedConductor by remember { mutableStateOf<User?>(null) }
     var isLoading by remember { mutableStateOf(false) }
+
+    BackHandler {
+        Log.d("AdminPanel", "BackHandler triggered")
+        onBack()
+    }
 
     Scaffold(
         topBar = {
@@ -48,6 +105,7 @@ fun AdminPanelScreen(onBack: () -> Unit) {
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
+                        Log.d("AdminPanel", "Navigation icon clicked")
                         Icon(Icons.Default.ArrowBack, "Volver")
                     }
                 },
@@ -63,7 +121,7 @@ fun AdminPanelScreen(onBack: () -> Unit) {
                 onClick = { showAddDialog = true },
                 containerColor = MaterialTheme.colorScheme.primary
             ) {
-                Icon(Icons.Default.Add, "Agregar codigo")
+                Icon(Icons.Default.Add, "Agregar conductor")
             }
         }
     ) { padding ->
@@ -79,7 +137,7 @@ fun AdminPanelScreen(onBack: () -> Unit) {
                     text = { Text("Pendientes") },
                     icon = {
                         Badge {
-                            Text("${drivers.count { it.canRegister }}")
+                            Text("${conductores.count { it.primerAcceso && it.activo }}")
                         }
                     }
                 )
@@ -89,7 +147,7 @@ fun AdminPanelScreen(onBack: () -> Unit) {
                     text = { Text("Registrados") },
                     icon = {
                         Badge {
-                            Text("${drivers.count { it.isRegistered }}")
+                            Text("${conductores.count { !it.primerAcceso && it.activo }}")
                         }
                     }
                 )
@@ -99,34 +157,27 @@ fun AdminPanelScreen(onBack: () -> Unit) {
                     text = { Text("Revocados") },
                     icon = {
                         Badge(containerColor = MaterialTheme.colorScheme.error) {
-                            Text("${drivers.count { !it.isActive }}")
+                            Text("${conductores.count { !it.activo }}")
                         }
                     }
                 )
             }
 
             when (selectedTab) {
-                0 -> PendingDriversList(
-                    drivers = drivers.filter { it.canRegister },
-                    onRevoke = { driver -> selectedDriver = driver },
-                    onDelete = { driver ->
+                0 -> PendientesList(
+                    conductores = conductores.filter { it.primerAcceso && it.activo },
+                    onRevoke = { conductor -> selectedConductor = conductor }
+                )
+                1 -> RegistradosList(
+                    conductores = conductores.filter { !it.primerAcceso && it.activo },
+                    onRevoke = { conductor -> selectedConductor = conductor }
+                )
+                2 -> RevocadosList(
+                    conductores = conductores.filter { !it.activo },
+                    onReactivate = { conductor ->
                         scope.launch {
                             isLoading = true
-                            repository.deleteCode(driver.id)
-                            isLoading = false
-                        }
-                    }
-                )
-                1 -> RegisteredDriversList(
-                    drivers = drivers.filter { it.isRegistered },
-                    onRevoke = { driver -> selectedDriver = driver }
-                )
-                2 -> RevokedDriversList(
-                    drivers = drivers.filter { !it.isActive },
-                    onReactivate = { driver ->
-                        scope.launch {
-                            isLoading = true
-                            repository.reactivateCode(driver.id)
+                            repository.setUsuarioActivo(conductor.uid, true)
                             isLoading = false
                         }
                     }
@@ -136,37 +187,36 @@ fun AdminPanelScreen(onBack: () -> Unit) {
     }
 
     if (showAddDialog) {
-        AddDriverDialog(
+        AddConductorDialog(
             onDismiss = { showAddDialog = false },
-            onConfirm = { mode, customCode, username ->
+            onConfirm = { nombre, username ->
                 scope.launch {
                     isLoading = true
-                    val result = if (mode == "auto") {
-                        repository.generateAutoCode(username)
-                    } else {
-                        repository.createManualCode(customCode, username)
-                    }
-
-                    result.onSuccess {
+                    val result = repository.createUser(
+                        nombre = nombre,
+                        username = username,
+                        passwordHash = "",
+                        role = "conductor"
+                    )
+                    if (result.isSuccess) {
                         showAddDialog = false
                     }
-
                     isLoading = false
                 }
-            },
-            repository = repository
+            }
         )
     }
 
-    selectedDriver?.let { driver ->
-        RevokeDriverDialog(
-            driver = driver,
-            onDismiss = { selectedDriver = null },
+    selectedConductor?.let { conductor ->
+        RevokeConductorDialog(
+            conductor = conductor,
+            onDismiss = { selectedConductor = null },
             onConfirm = { reason ->
                 scope.launch {
                     isLoading = true
-                    repository.revokeCode(driver.id, reason)
-                    selectedDriver = null
+                    // Aquí podrías agregar un campo de motivo en la colección de usuarios si lo deseas
+                    repository.setUsuarioActivo(conductor.uid, false)
+                    selectedConductor = null
                     isLoading = false
                 }
             }
@@ -175,26 +225,24 @@ fun AdminPanelScreen(onBack: () -> Unit) {
 }
 
 @Composable
-fun PendingDriversList(
-    drivers: List<AuthorizedDriver>,
-    onRevoke: (AuthorizedDriver) -> Unit,
-    onDelete: (AuthorizedDriver) -> Unit
+fun PendientesList(
+    conductores: List<User>,
+    onRevoke: (User) -> Unit
 ) {
-    if (drivers.isEmpty()) {
+    if (conductores.isEmpty()) {
         EmptyState(
-            icon = Icons.Default.CheckCircle,
-            message = "No hay codigos pendientes"
+            icon = Icons.Default.Schedule,
+            message = "No hay conductores pendientes"
         )
     } else {
         LazyColumn(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(drivers) { driver ->
-                PendingDriverCard(
-                    driver = driver,
-                    onRevoke = { onRevoke(driver) },
-                    onDelete = { onDelete(driver) }
+            items(conductores) { conductor ->
+                ConductorCard(
+                    conductor = conductor,
+                    onRevoke = { onRevoke(conductor) }
                 )
             }
         }
@@ -202,11 +250,11 @@ fun PendingDriversList(
 }
 
 @Composable
-fun RegisteredDriversList(
-    drivers: List<AuthorizedDriver>,
-    onRevoke: (AuthorizedDriver) -> Unit
+fun RegistradosList(
+    conductores: List<User>,
+    onRevoke: (User) -> Unit
 ) {
-    if (drivers.isEmpty()) {
+    if (conductores.isEmpty()) {
         EmptyState(
             icon = Icons.Default.Group,
             message = "No hay conductores registrados"
@@ -216,10 +264,11 @@ fun RegisteredDriversList(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(drivers) { driver ->
-                RegisteredDriverCard(
-                    driver = driver,
-                    onRevoke = { onRevoke(driver) }
+            items(conductores) { conductor ->
+                ConductorCard(
+                    conductor = conductor,
+                    onRevoke = { onRevoke(conductor) },
+                    isRegistered = true
                 )
             }
         }
@@ -227,28 +276,24 @@ fun RegisteredDriversList(
 }
 
 @Composable
-fun RevokedDriversList(
-    drivers: List<AuthorizedDriver>,
-    onReactivate: (AuthorizedDriver) -> Unit
+fun RevocadosList(
+    conductores: List<User>,
+    onReactivate: (User) -> Unit
 ) {
-    if (drivers.isEmpty()) {
+    if (conductores.isEmpty()) {
         EmptyState(
             icon = Icons.Default.Block,
-            message = "No hay codigos revocados"
+            message = "No hay conductores revocados"
         )
     } else {
         LazyColumn(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(drivers) { driver ->
-                RevokedDriverCard(
-                    driver = driver,
-                    onReactivate = {
-                        if (!driver.isRegistered) {
-                            onReactivate(driver)
-                        }
-                    }
+            items(conductores) { conductor ->
+                RevocadoCard(
+                    conductor = conductor,
+                    onReactivate = { onReactivate(conductor) }
                 )
             }
         }
@@ -257,14 +302,21 @@ fun RevokedDriversList(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PendingDriverCard(
-    driver: AuthorizedDriver,
+fun ConductorCard(
+    conductor: User,
     onRevoke: () -> Unit,
-    onDelete: () -> Unit
+    isRegistered: Boolean = false
 ) {
-    var showMenu by remember { mutableStateOf(false) }
-
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = if (isRegistered) {
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        } else {
+            CardDefaults.cardColors()
+        }
+    ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -273,108 +325,15 @@ fun PendingDriverCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        driver.accessCode,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        "Usuario: ${driver.username}",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
-
-                Box {
-                    IconButton(onClick = { showMenu = true }) {
-                        Icon(Icons.Default.MoreVert, "Opciones")
-                    }
-
-                    DropdownMenu(
-                        expanded = showMenu,
-                        onDismissRequest = { showMenu = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Revocar") },
-                            onClick = {
-                                showMenu = false
-                                onRevoke()
-                            },
-                            leadingIcon = { Icon(Icons.Default.Block, null) }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Eliminar") },
-                            onClick = {
-                                showMenu = false
-                                onDelete()
-                            },
-                            leadingIcon = {
-                                Icon(
-                                    Icons.Default.Delete,
-                                    null,
-                                    tint = MaterialTheme.colorScheme.error
-                                )
-                            }
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                AssistChip(
-                    onClick = { },
-                    label = { Text("Pendiente") },
-                    leadingIcon = {
-                        Icon(Icons.Default.Schedule, null, Modifier.size(16.dp))
-                    },
-                    colors = AssistChipDefaults.assistChipColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer
-                    )
-                )
-
-                Text(
-                    "Creado: ${formatDate(driver.createdAt)}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.align(Alignment.CenterVertically)
-                )
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun RegisteredDriverCard(
-    driver: AuthorizedDriver,
-    onRevoke: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        driver.username,
+                        conductor.nombre,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        "Codigo: ${driver.accessCode}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        "Usuario: ${conductor.username}",
+                        style = MaterialTheme.typography.bodyMedium
                     )
                 }
-
                 IconButton(
                     onClick = onRevoke,
                     colors = IconButtonDefaults.iconButtonColors(
@@ -384,27 +343,40 @@ fun RegisteredDriverCard(
                     Icon(Icons.Default.Block, "Revocar acceso")
                 }
             }
-
             Spacer(modifier = Modifier.height(8.dp))
-
-            AssistChip(
-                onClick = { },
-                label = { Text("Registrado: ${formatDate(driver.registeredAt!!)}") },
-                leadingIcon = {
-                    Icon(Icons.Default.CheckCircle, null, Modifier.size(16.dp))
-                },
-                colors = AssistChipDefaults.assistChipColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                AssistChip(
+                    onClick = { },
+                    label = { Text(if (isRegistered) "Registrado" else "Pendiente") },
+                    leadingIcon = {
+                        Icon(
+                            if (isRegistered) Icons.Default.CheckCircle else Icons.Default.Schedule,
+                            null,
+                            Modifier.size(16.dp)
+                        )
+                    },
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = if (isRegistered)
+                            MaterialTheme.colorScheme.primaryContainer
+                        else
+                            MaterialTheme.colorScheme.secondaryContainer
+                    )
                 )
-            )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    "Creado: ${formatDate(conductor.createdAt)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RevokedDriverCard(
-    driver: AuthorizedDriver,
+fun RevocadoCard(
+    conductor: User,
     onReactivate: () -> Unit
 ) {
     Card(
@@ -416,39 +388,32 @@ fun RevokedDriverCard(
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        driver.username,
+                        conductor.nombre,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        driver.accessCode,
+                        "Usuario: ${conductor.username}",
                         style = MaterialTheme.typography.bodyMedium
                     )
-                    driver.revokedReason?.let {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            "Motivo: $it",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
                 }
-
-                if (!driver.isRegistered) {
-                    IconButton(onClick = onReactivate) {
-                        Icon(Icons.Default.Restore, "Reactivar")
-                    }
+                IconButton(
+                    onClick = onReactivate,
+                    colors = IconButtonDefaults.iconButtonColors(
+                        contentColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    Icon(Icons.Default.Restore, "Reactivar")
                 }
             }
-
             Spacer(modifier = Modifier.height(8.dp))
-
             Text(
-                "Revocado: ${formatDate(driver.revokedAt!!)}",
+                "Creado: ${formatDate(conductor.createdAt)}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -456,46 +421,15 @@ fun RevokedDriverCard(
     }
 }
 
-@Composable
-fun EmptyState(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    message: String
-) {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(
-                icon,
-                contentDescription = null,
-                modifier = Modifier.size(64.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                message,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddDriverDialog(
+fun AddConductorDialog(
     onDismiss: () -> Unit,
-    onConfirm: (mode: String, customCode: String, username: String) -> Unit,
-    repository: FirebaseRepository
+    onConfirm: (nombre: String, username: String) -> Unit
 ) {
-    var mode by remember { mutableStateOf("auto") }
-    var customCode by remember { mutableStateOf("") }
+    var nombre by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
-    var generatedCode by remember { mutableStateOf<String?>(null) }
-    var errorMsg by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -503,151 +437,43 @@ fun AddDriverDialog(
         title = { Text("Agregar Nuevo Conductor") },
         text = {
             Column {
-                if (generatedCode == null) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        FilterChip(
-                            selected = mode == "auto",
-                            onClick = { mode = "auto" },
-                            label = { Text("Auto") }
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        FilterChip(
-                            selected = mode == "manual",
-                            onClick = { mode = "manual" },
-                            label = { Text("Manual") }
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    if (mode == "manual") {
-                        OutlinedTextField(
-                            value = customCode,
-                            onValueChange = { customCode = it.uppercase() },
-                            label = { Text("Codigo Personalizado") },
-                            placeholder = { Text("TRUCK-05") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = !isLoading
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
-
-                    OutlinedTextField(
-                        value = username,
-                        onValueChange = { username = it.lowercase() },
-                        label = { Text("Nombre de usuario") },
-                        placeholder = { Text("carlos") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !isLoading
-                    )
-
-                    errorMsg?.let {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            it,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                } else {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer
-                        )
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Icon(
-                                Icons.Default.CheckCircle,
-                                null,
-                                modifier = Modifier.size(48.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                "Codigo creado exitosamente",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text("CODIGO:", style = MaterialTheme.typography.labelSmall)
-                            Text(
-                                generatedCode!!,
-                                style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text("USUARIO:", style = MaterialTheme.typography.labelSmall)
-                            Text(
-                                username,
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                "Comparte esta informacion con el conductor",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
+                OutlinedTextField(
+                    value = nombre,
+                    onValueChange = { nombre = it },
+                    label = { Text("Nombre completo") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isLoading
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = username,
+                    onValueChange = { username = it.lowercase() },
+                    label = { Text("Nombre de usuario") },
+                    placeholder = { Text("ej: juan123") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isLoading
+                )
             }
         },
         confirmButton = {
-            if (generatedCode == null) {
-                Button(
-                    onClick = {
-                        scope.launch {
-                            isLoading = true
-                            errorMsg = null
-
-                            val result = if (mode == "auto") {
-                                repository.generateAutoCode(username)
-                            } else {
-                                repository.createManualCode(customCode, username)
-                            }
-
-                            result.onSuccess { driver ->
-                                generatedCode = driver.accessCode
-                            }.onFailure { error ->
-                                errorMsg = error.message
-                            }
-
-                            isLoading = false
-                        }
-                    },
-                    enabled = !isLoading && username.isNotBlank() && (mode == "auto" || customCode.isNotBlank())
-                ) {
-                    if (isLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            color = MaterialTheme.colorScheme.onPrimary
-                        )
-                    } else {
-                        Text(if (mode == "auto") "Generar" else "Crear")
-                    }
-                }
-            } else {
-                Button(onClick = onDismiss) {
-                    Text("Cerrar")
+            Button(
+                onClick = {
+                    onConfirm(nombre, username)
+                },
+                enabled = nombre.isNotBlank() && username.isNotBlank() && !isLoading
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                } else {
+                    Text("Crear")
                 }
             }
         },
         dismissButton = {
-            if (generatedCode == null) {
-                TextButton(onClick = onDismiss) {
-                    Text("Cancelar")
-                }
+            TextButton(onClick = onDismiss) {
+                Text("Cancelar")
             }
         }
     )
@@ -655,8 +481,8 @@ fun AddDriverDialog(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RevokeDriverDialog(
-    driver: AuthorizedDriver,
+fun RevokeConductorDialog(
+    conductor: User,
     onDismiss: () -> Unit,
     onConfirm: (reason: String) -> Unit
 ) {
@@ -668,7 +494,7 @@ fun RevokeDriverDialog(
         title = { Text("Revocar Acceso") },
         text = {
             Column {
-                Text("Revocar acceso a ${driver.username}?")
+                Text("¿Revocar acceso a ${conductor.nombre}?")
                 Spacer(modifier = Modifier.height(16.dp))
                 OutlinedTextField(
                     value = reason,
@@ -696,6 +522,32 @@ fun RevokeDriverDialog(
             }
         }
     )
+}
+
+@Composable
+fun EmptyState(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    message: String
+) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                icon,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                message,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
 }
 
 fun formatDate(timestamp: Long): String {

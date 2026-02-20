@@ -1,6 +1,7 @@
 // screens/RouteSelectionScreen.kt
 package com.example.copilotovirtual.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -44,6 +45,7 @@ fun RouteSelectionScreen(
     var selectedOrigin by remember { mutableStateOf<City?>(null) }
     var selectedDest by remember { mutableStateOf<City?>(null) }
     var availableRoutes by remember { mutableStateOf<List<Route>>(emptyList()) }
+    var selectedRoute by remember { mutableStateOf<Route?>(null) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var routeSource by remember { mutableStateOf<RouteSource?>(null) }
@@ -54,6 +56,7 @@ fun RouteSelectionScreen(
 
         if (origin == null || dest == null) {
             availableRoutes = emptyList()
+            selectedRoute = null
             routeSource = null
             return@LaunchedEffect
         }
@@ -66,10 +69,9 @@ fun RouteSelectionScreen(
 
             if (hasInternet) {
                 try {
-                    // CAMBIA ESTA LÍNEA para usar coordenadas de City.kt:
                     val routes = directionsService.getDirections(
-                        origin = origin.coordinates,     // Entrada/salida definida en City.kt
-                        destination = dest.coordinates,  // Entrada/salida definida en City.kt
+                        origin = origin.coordinates,
+                        destination = dest.coordinates,
                         alternatives = true,
                         originCityId = origin.id,
                         destinationCityId = dest.id
@@ -82,12 +84,14 @@ fun RouteSelectionScreen(
                             description = r.summary,
                             startCityId = origin.id,
                             endCityId = dest.id,
-                            waypoints = r.polyline,  // Los waypoints vienen de Google
+                            waypoints = r.polyline,
                             distance = r.distance.toDouble(),
                             estimatedTime = r.duration.toLong()
                         )
                     }
                     routeSource = RouteSource.GOOGLE_API
+                    // Seleccionar la primera ruta por defecto
+                    selectedRoute = availableRoutes.firstOrNull()
 
                 } catch (e: Exception) {
                     errorMessage = "Error: ${e.message}"
@@ -107,6 +111,21 @@ fun RouteSelectionScreen(
                     }
                 }
             )
+        },
+        bottomBar = {
+            if (selectedRoute != null) {
+                Button(
+                    onClick = { onRouteSelected(selectedRoute!!) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    enabled = selectedRoute != null
+                ) {
+                    Icon(Icons.Default.Route, null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("INICIAR RUTA")
+                }
+            }
         }
     ) { padding ->
         LazyColumn(
@@ -115,7 +134,12 @@ fun RouteSelectionScreen(
                 .padding(padding)
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(vertical = 16.dp)
+            contentPadding = PaddingValues(
+                top = 16.dp,
+                bottom = 80.dp,
+                start = 16.dp,
+                end = 16.dp
+            )
         ) {
 
             // Selectores de ciudad
@@ -187,12 +211,13 @@ fun RouteSelectionScreen(
                 }
             }
 
-            // Lista de rutas
+            // Lista de rutas (ahora seleccionables)
             items(availableRoutes) { route ->
                 RouteCard(
                     route = route,
                     isFallback = routeSource == RouteSource.FALLBACK,
-                    onClick = { onRouteSelected(route) }
+                    isSelected = route.id == selectedRoute?.id,
+                    onClick = { selectedRoute = route }
                 )
             }
         }
@@ -314,17 +339,22 @@ fun CityDropdown(
 fun RouteCard(
     route: Route,
     isFallback: Boolean = false,
+    isSelected: Boolean = false,
     onClick: () -> Unit
 ) {
     Card(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = if (isFallback)
-                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
-            else
-                MaterialTheme.colorScheme.surface
-        )
+            containerColor = when {
+                isSelected -> MaterialTheme.colorScheme.primaryContainer
+                isFallback -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+                else -> MaterialTheme.colorScheme.surface
+            }
+        ),
+        border = if (isSelected) {
+            BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+        } else null
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -346,11 +376,19 @@ fun RouteCard(
                         )
                     }
                 }
-                Icon(
-                    Icons.Default.ChevronRight,
-                    null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
+                if (isSelected) {
+                    Icon(
+                        Icons.Default.CheckCircle,
+                        null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                } else {
+                    Icon(
+                        Icons.Default.ChevronRight,
+                        null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(10.dp))
